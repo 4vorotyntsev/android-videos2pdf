@@ -5,7 +5,10 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
+import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
@@ -13,12 +16,14 @@ import androidx.lifecycle.viewModelScope
 import com.vs.videoscanpdf.data.entities.ExportEntity
 import com.vs.videoscanpdf.data.entities.PageEntity
 import com.vs.videoscanpdf.data.repository.ProjectRepository
+import com.vs.videoscanpdf.data.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -33,7 +38,8 @@ import javax.inject.Inject
 @HiltViewModel
 class ExportViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val projectRepository: ProjectRepository
+    private val projectRepository: ProjectRepository,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(ExportUiState())
@@ -44,6 +50,18 @@ class ExportViewModel @Inject constructor(
     fun initialize(projectId: String) {
         currentProjectId = projectId
         loadPageCount()
+        loadSettings()
+    }
+    
+    private fun loadSettings() {
+        viewModelScope.launch {
+            val useGrayscale = settingsRepository.getUseGrayscale().first()
+            val pdfFileName = settingsRepository.getPdfFileName().first()
+            _uiState.value = _uiState.value.copy(
+                useGrayscale = useGrayscale,
+                pdfFileName = pdfFileName
+            )
+        }
     }
     
     private fun loadPageCount() {
@@ -59,6 +77,25 @@ class ExportViewModel @Inject constructor(
     
     fun setQuality(quality: ExportQuality) {
         _uiState.value = _uiState.value.copy(quality = quality)
+    }
+
+    fun setUseGrayscale(useGrayscale: Boolean) {
+        _uiState.value = _uiState.value.copy(useGrayscale = useGrayscale)
+    }
+
+    fun setPdfFileName(name: String) {
+        _uiState.value = _uiState.value.copy(
+            pdfFileName = name.ifBlank { "scan" },
+            isEditingFileName = false
+        )
+    }
+
+    fun startEditingFileName() {
+        _uiState.value = _uiState.value.copy(isEditingFileName = true)
+    }
+
+    fun cancelEditingFileName() {
+        _uiState.value = _uiState.value.copy(isEditingFileName = false)
     }
     
     fun exportPdf() {
@@ -76,7 +113,7 @@ class ExportViewModel @Inject constructor(
                     projectId = currentProjectId,
                     pdfPath = pdfPath,
                     pageCount = pages.size,
-                    settingsJson = """{"pageSize":"${_uiState.value.pageSize.name}","quality":"${_uiState.value.quality.name}"}"""
+                    settingsJson = """{"pageSize":"${_uiState.value.pageSize.name}","quality":"${_uiState.value.quality.name}","grayscale":${_uiState.value.useGrayscale}}"""
                 )
                 projectRepository.addExport(export)
                 
@@ -95,8 +132,16 @@ class ExportViewModel @Inject constructor(
     }
     
     private suspend fun generatePdf(pages: List<PageEntity>): String = withContext(Dispatchers.IO) {
-        val exportId = UUID.randomUUID().toString()
-        val outputFile = projectRepository.getExportPdfPath(currentProjectId, exportId)
+        // Get settings
+        val pdfSavePath = settingsRepository.getPdfSavePath().first()
+        
+        // Use local state for these
+        val useGrayscale = _uiState.value.useGrayscale
+        val pdfFileName = _uiState.value.pdfFileName
+        
+        // Get unique file path (adds _1, _2, etc. if file exists)
+        val saveDirectory = settingsRepository.ensurePdfSaveDirectory(pdfSavePath)
+        val outputFile = settingsRepository.getUniquePdfFilePath(saveDirectory, pdfFileName)
         outputFile.parentFile?.mkdirs()
         
         val pdfDocument = PdfDocument()
@@ -147,7 +192,16 @@ class ExportViewModel @Inject constructor(
             matrix.postScale(scale, scale)
             matrix.postTranslate(left, top)
             
-            canvas.drawBitmap(rotatedBitmap, matrix, null)
+            // Apply grayscale filter if enabled
+            val paint = if (useGrayscale) {
+                Paint().apply {
+                    colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+                }
+            } else {
+                null
+            }
+            
+            canvas.drawBitmap(rotatedBitmap, matrix, paint)
             
             pdfDocument.finishPage(pdfPage)
             

@@ -38,7 +38,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,13 +61,26 @@ import java.util.Locale
 @Composable
 fun HomeScreen(
     onRecordClick: (projectId: String) -> Unit,
-    onExportClick: () -> Unit,
+    onImportVideo: (projectId: String, videoUri: String) -> Unit,
     onSettingsClick: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    var showDeleteDialog by remember { androidx.compose.runtime.mutableStateOf<ExportEntity?>(null) }
+    
+    // Video picker launcher
+    val videoPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { videoUri ->
+            scope.launch {
+                val projectId = viewModel.createNewProject()
+                onImportVideo(projectId, videoUri.toString())
+            }
+        }
+    }
     
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -97,7 +112,9 @@ fun HomeScreen(
                         onRecordClick(projectId)
                     }
                 },
-                onExportClick = onExportClick
+                onImportClick = {
+                    videoPickerLauncher.launch("video/*")
+                }
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -116,17 +133,44 @@ fun HomeScreen(
                     EmptyExportsState()
                 }
                 else -> {
-                    ExportsList(exports = uiState.exports)
+                    ExportsList(
+                        exports = uiState.exports,
+                        onDelete = { showDeleteDialog = it }
+                    )
                 }
             }
         }
+    }
+
+    // Delete confirmation dialog
+    showDeleteDialog?.let { export ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteDialog = null },
+            title = { Text("Delete Export") },
+            text = { Text("Are you sure you want to delete this export? The PDF file will also be deleted.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        viewModel.deleteExport(export)
+                        showDeleteDialog = null
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showDeleteDialog = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
 @Composable
 private fun ActionButtonsRow(
     onRecordClick: () -> Unit,
-    onExportClick: () -> Unit
+    onImportClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -152,7 +196,7 @@ private fun ActionButtonsRow(
         }
         
         Button(
-            onClick = onExportClick,
+            onClick = onImportClick,
             modifier = Modifier.weight(1f),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.secondary
@@ -165,7 +209,7 @@ private fun ActionButtonsRow(
                 modifier = Modifier.size(20.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Export Video")
+            Text(stringResource(R.string.import_video))
         }
     }
 }
@@ -205,7 +249,10 @@ private fun EmptyExportsState() {
 }
 
 @Composable
-private fun ExportsList(exports: List<ExportEntity>) {
+private fun ExportsList(
+    exports: List<ExportEntity>,
+    onDelete: (ExportEntity) -> Unit
+) {
     Column(
         modifier = Modifier.padding(horizontal = 16.dp)
     ) {
@@ -223,14 +270,20 @@ private fun ExportsList(exports: List<ExportEntity>) {
                 items = exports,
                 key = { it.id }
             ) { export ->
-                ExportCard(export = export)
+                ExportCard(
+                    export = export,
+                    onDelete = { onDelete(export) }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ExportCard(export: ExportEntity) {
+private fun ExportCard(
+    export: ExportEntity,
+    onDelete: () -> Unit
+) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()) }
     
     Card(
@@ -279,6 +332,14 @@ private fun ExportCard(export: ExportEntity) {
                     text = "${export.pageCount} pages",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            IconButton(onClick = onDelete) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.error
                 )
             }
         }

@@ -25,12 +25,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -71,6 +77,7 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun FramePickerScreen(
     projectId: String,
+    importedVideoUri: String? = null,
     onContinue: () -> Unit,
     onBack: () -> Unit,
     viewModel: FramePickerViewModel = hiltViewModel()
@@ -78,9 +85,9 @@ fun FramePickerScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     
-    // Initialize ViewModel
-    LaunchedEffect(projectId) {
-        viewModel.initialize(projectId)
+    // Initialize ViewModel with optional imported video
+    LaunchedEffect(projectId, importedVideoUri) {
+        viewModel.initialize(projectId, importedVideoUri)
     }
     
     // ExoPlayer instance
@@ -117,219 +124,294 @@ fun FramePickerScreen(
         }
     }
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.frame_picker_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    if (viewModel.canContinue()) {
-                        Button(
-                            onClick = onContinue,
-                            modifier = Modifier.padding(end = 8.dp)
-                        ) {
-                            Text(stringResource(R.string.continue_to_editor))
-                        }
-                    }
-                }
+    // Scrubber position state
+    var sliderPosition by remember { mutableFloatStateOf(0f) }
+    
+    // Update slider position from exoPlayer
+    LaunchedEffect(exoPlayer) {
+        while (true) {
+            if (exoPlayer.duration > 0) {
+                sliderPosition = exoPlayer.currentPosition.toFloat() / exoPlayer.duration
+                viewModel.seekTo(exoPlayer.currentPosition)
+            }
+            kotlinx.coroutines.delay(100)
+        }
+    }
+    
+    if (uiState.isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+    } else if (uiState.error != null) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = uiState.error ?: "Unknown error",
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center
             )
         }
-    ) { paddingValues ->
-        if (uiState.isLoading) {
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            // ============================================
+            // SECTION 1: CURRENT PICTURE (Full Screen Preview)
+            // ============================================
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .weight(1f) // Takes all available space
+                    .background(Color.Black)
             ) {
-                CircularProgressIndicator()
-            }
-        } else if (uiState.error != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = uiState.error ?: "Unknown error",
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.Center
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            player = exoPlayer
+                            useController = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
                 )
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                // Video player
+                
+                // Back button overlay (top-left)
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
+                    )
+                }
+                
+                // Continue button overlay (top-right)
+                if (viewModel.canContinue()) {
+                    Button(
+                        onClick = onContinue,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PictureAsPdf,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("${uiState.selectedPages.size}")
+                    }
+                }
+                
+                // Play/Pause overlay (center)
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
-                        .background(Color.Black)
-                ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            PlayerView(ctx).apply {
-                                player = exoPlayer
-                                useController = false
+                        .fillMaxSize()
+                        .clickable {
+                            if (exoPlayer.isPlaying) {
+                                exoPlayer.pause()
+                            } else {
+                                exoPlayer.play()
                             }
                         },
-                        modifier = Modifier.fillMaxSize()
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!uiState.isPlaying) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play",
+                            modifier = Modifier
+                                .size(80.dp)
+                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                .padding(16.dp),
+                            tint = Color.White
+                        )
+                    }
+                }
+                
+                // Add page FAB overlay (bottom-right)
+                FloatingActionButton(
+                    onClick = { viewModel.addCurrentFrame() },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_page))
+                }
+                
+                // Time indicator overlay (bottom-left)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(16.dp)
+                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "${formatDuration(uiState.currentPositionMs)} / ${formatDuration(uiState.videoDurationMs)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White
                     )
-                    
-                    // Play/Pause overlay
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable {
-                                if (exoPlayer.isPlaying) {
-                                    exoPlayer.pause()
-                                } else {
-                                    exoPlayer.play()
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (!uiState.isPlaying) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Play",
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                    .padding(12.dp),
-                                tint = Color.White
-                            )
-                        }
-                    }
                 }
-                
-                // Scrubber
-                var sliderPosition by remember { mutableFloatStateOf(0f) }
-                
-                LaunchedEffect(exoPlayer) {
-                    while (true) {
-                        if (exoPlayer.duration > 0) {
-                            sliderPosition = exoPlayer.currentPosition.toFloat() / exoPlayer.duration
-                            viewModel.seekTo(exoPlayer.currentPosition)
-                        }
-                        kotlinx.coroutines.delay(100)
-                    }
-                }
-                
-                Column(
+            }
+            
+            // ============================================
+            // SECTION 2: VIDEO PICTURES (Thumbnail Scrubber)
+            // ============================================
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        MaterialTheme.colorScheme.surface,
+                        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                    )
+                    .padding(vertical = 8.dp)
+            ) {
+                // Slider for fine-grained scrubbing
+                Slider(
+                    value = sliderPosition,
+                    onValueChange = { value ->
+                        sliderPosition = value
+                        val position = (value * exoPlayer.duration).toLong()
+                        exoPlayer.seekTo(position)
+                        viewModel.seekTo(position)
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Slider(
-                        value = sliderPosition,
-                        onValueChange = { value ->
-                            sliderPosition = value
-                            val position = (value * exoPlayer.duration).toLong()
-                            exoPlayer.seekTo(position)
-                            viewModel.seekTo(position)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = formatDuration(uiState.currentPositionMs),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            text = formatDuration(uiState.videoDurationMs),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+                        .padding(horizontal = 16.dp)
+                )
                 
-                // Thumbnail strip
+                // Section header
+                Text(
+                    text = stringResource(R.string.frame_picker_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+                
+                // Video thumbnail strip
                 if (uiState.thumbnails.isNotEmpty()) {
                     LazyRow(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(60.dp),
+                            .height(72.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(uiState.thumbnails) { thumbnail ->
-                            Image(
-                                bitmap = thumbnail.bitmap.asImageBitmap(),
-                                contentDescription = null,
+                            Box(
                                 modifier = Modifier
-                                    .height(60.dp)
+                                    .height(72.dp)
                                     .aspectRatio(16f / 9f)
-                                    .clip(RoundedCornerShape(4.dp))
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(
+                                        width = if (kotlin.math.abs(uiState.currentPositionMs - thumbnail.timeMs) < 500) 3.dp else 0.dp,
+                                        color = if (kotlin.math.abs(uiState.currentPositionMs - thumbnail.timeMs) < 500) 
+                                            MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
                                     .clickable {
                                         exoPlayer.seekTo(thumbnail.timeMs)
                                         viewModel.seekTo(thumbnail.timeMs)
-                                    },
-                                contentScale = ContentScale.Crop
+                                    }
+                            ) {
+                                Image(
+                                    bitmap = thumbnail.bitmap.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(72.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
+            
+
+            
+            // ============================================
+            // SECTION 3: COLLECTED PICTURES (Selected Pages)
+            // ============================================
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(vertical = 8.dp)
+            ) {
+                // Section header with count
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.selected_pages, uiState.selectedPages.size),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    if (uiState.selectedPages.isNotEmpty()) {
+                        Button(
+                            onClick = onContinue,
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PictureAsPdf,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.continue_to_editor),
+                                style = MaterialTheme.typography.labelMedium
                             )
                         }
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Add page button
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    FloatingActionButton(
-                        onClick = { viewModel.addCurrentFrame() },
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(stringResource(R.string.add_page))
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Selected pages
-                Text(
-                    text = stringResource(R.string.selected_pages, uiState.selectedPages.size),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
+                // Collected pages strip
                 if (uiState.selectedPages.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.no_pages_selected),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        textAlign = TextAlign.Center
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(R.string.no_pages_selected),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 } else {
                     LazyRow(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
+                            .height(100.dp),
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {

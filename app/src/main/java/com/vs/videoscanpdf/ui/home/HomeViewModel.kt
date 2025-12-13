@@ -2,6 +2,7 @@ package com.vs.videoscanpdf.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vs.videoscanpdf.data.entities.ExportEntity
 import com.vs.videoscanpdf.data.repository.ProjectRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +60,12 @@ class HomeViewModel @Inject constructor(
     private fun generateProjectTitle(): String {
         val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
         return "Scan ${dateFormat.format(Date())}"
+    }
+
+    fun deleteExport(export: ExportEntity) {
+        viewModelScope.launch {
+            projectRepository.deleteExport(export.id, export.pdfPath)
+        }
     }
 }
 

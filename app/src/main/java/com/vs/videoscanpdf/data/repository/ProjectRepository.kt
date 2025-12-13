@@ -112,6 +112,18 @@ class ProjectRepository @Inject constructor(
         projectDao.updateTimestamp(export.projectId)
     }
     
+    suspend fun deleteExport(exportId: String, pdfPath: String?) = withContext(Dispatchers.IO) {
+        // Delete PDF file if exists
+        pdfPath?.let { path ->
+            val file = File(path)
+            if (file.exists()) {
+                file.delete()
+            }
+        }
+        // Delete from database
+        exportDao.deleteById(exportId)
+    }
+    
     // ============== Video Management ==============
     
     suspend fun setVideoPath(projectId: String, videoPath: String, durationMs: Long) {

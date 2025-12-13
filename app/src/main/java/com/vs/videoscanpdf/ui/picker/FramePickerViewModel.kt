@@ -36,9 +36,65 @@ class FramePickerViewModel @Inject constructor(
     private lateinit var currentProjectId: String
     private var mediaRetriever: MediaMetadataRetriever? = null
     
-    fun initialize(projectId: String) {
+    fun initialize(projectId: String, importedVideoUri: String? = null) {
         currentProjectId = projectId
-        loadProject()
+        if (importedVideoUri != null) {
+            loadImportedVideo(importedVideoUri)
+        } else {
+            loadProject()
+        }
+    }
+    
+    private fun loadImportedVideo(videoUri: String) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(isLoading = true)
+                
+                // Copy imported video to project directory
+                val videoPath = withContext(Dispatchers.IO) {
+                    val targetFile = projectRepository.getVideoPath(currentProjectId)
+                    targetFile.parentFile?.mkdirs()
+                    
+                    // Copy from content URI to local file
+                    val uri = android.net.Uri.parse(videoUri)
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        targetFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    targetFile.absolutePath
+                }
+                
+                // Get duration using MediaMetadataRetriever
+                val duration = withContext(Dispatchers.IO) {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(videoPath)
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                    } finally {
+                        retriever.release()
+                    }
+                }
+                
+                // Update project with video path
+                projectRepository.setVideoPath(currentProjectId, videoPath, duration)
+                
+                _uiState.value = _uiState.value.copy(
+                    videoPath = videoPath,
+                    videoDurationMs = duration,
+                    isLoading = false
+                )
+                
+                initializeMediaRetriever(videoPath)
+                loadThumbnails()
+                loadExistingPages()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    error = "Failed to import video: ${e.message}",
+                    isLoading = false
+                )
+            }
+        }
     }
     
     private fun loadProject() {

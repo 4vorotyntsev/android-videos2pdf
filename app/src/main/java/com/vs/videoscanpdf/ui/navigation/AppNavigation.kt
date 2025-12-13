@@ -34,9 +34,11 @@ fun AppNavigation(
                 onRecordClick = { projectId ->
                     navController.navigate(Screen.Recorder.createRoute(projectId))
                 },
-                onExportClick = {
-                    // For now, navigate to settings or could show a picker
-                    // In a full implementation, this might open a video picker
+                onImportVideo = { projectId, videoUri ->
+                    // Navigate to FramePicker with the imported video
+                    // The video URI needs to be encoded for navigation
+                    val encodedUri = java.net.URLEncoder.encode(videoUri, "UTF-8")
+                    navController.navigate(Screen.FramePicker.createRoute(projectId) + "?videoUri=$encodedUri")
                 },
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
@@ -65,14 +67,23 @@ fun AppNavigation(
         
         // Frame Picker screen
         composable(
-            route = Screen.FramePicker.route,
+            route = Screen.FramePicker.route + "?videoUri={videoUri}",
             arguments = listOf(
-                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType }
+                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType },
+                navArgument("videoUri") { 
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
             )
         ) { backStackEntry ->
             val projectId = backStackEntry.arguments?.getString(Screen.PROJECT_ID_ARG) ?: return@composable
+            val videoUri = backStackEntry.arguments?.getString("videoUri")?.let {
+                java.net.URLDecoder.decode(it, "UTF-8")
+            }
             FramePickerScreen(
                 projectId = projectId,
+                importedVideoUri = videoUri,
                 onContinue = {
                     navController.navigate(Screen.PageEditor.createRoute(projectId))
                 },

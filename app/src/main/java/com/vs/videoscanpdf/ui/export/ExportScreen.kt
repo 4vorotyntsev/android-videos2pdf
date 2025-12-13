@@ -18,7 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -30,14 +33,18 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -84,6 +91,7 @@ fun ExportScreen(
             if (uiState.exportedPdfPath != null) {
                 // Export complete view
                 ExportCompleteContent(
+                    pdfPath = uiState.exportedPdfPath!!,
                     onShare = viewModel::sharePdf,
                     onDone = onExportComplete
                 )
@@ -93,6 +101,10 @@ fun ExportScreen(
                     uiState = uiState,
                     onPageSizeChange = viewModel::setPageSize,
                     onQualityChange = viewModel::setQuality,
+                    onGrayscaleChange = viewModel::setUseGrayscale,
+                    onFileNameChange = viewModel::setPdfFileName,
+                    onStartEditingFileName = viewModel::startEditingFileName,
+                    onCancelEditingFileName = viewModel::cancelEditingFileName,
                     onExport = viewModel::exportPdf
                 )
             }
@@ -105,9 +117,95 @@ private fun ExportOptionsContent(
     uiState: ExportUiState,
     onPageSizeChange: (PageSize) -> Unit,
     onQualityChange: (ExportQuality) -> Unit,
+    onGrayscaleChange: (Boolean) -> Unit,
+    onFileNameChange: (String) -> Unit,
+    onStartEditingFileName: () -> Unit,
+    onCancelEditingFileName: () -> Unit,
     onExport: () -> Unit
 ) {
     Column {
+        // Filename and Grayscale Settings
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Filename
+                if (uiState.isEditingFileName) {
+                    var editName by androidx.compose.runtime.remember(uiState.pdfFileName) { 
+                        androidx.compose.runtime.mutableStateOf(uiState.pdfFileName) 
+                    }
+                    
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("File Name") },
+                        suffix = { Text(".pdf") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onCancelEditingFileName) {
+                            Text("Cancel")
+                        }
+                        TextButton(onClick = { onFileNameChange(editName) }) {
+                            Text("Save")
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "File Name",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${uiState.pdfFileName}.pdf",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                        IconButton(onClick = onStartEditingFileName) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit name")
+                        }
+                    }
+                }
+                
+                androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                
+                // Grayscale
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Black & White",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Convert pages to grayscale",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = uiState.useGrayscale,
+                        onCheckedChange = onGrayscaleChange
+                    )
+                }
+            }
+        }
+
         // Pages info
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -254,6 +352,7 @@ private fun ExportOptionsContent(
 
 @Composable
 private fun ExportCompleteContent(
+    pdfPath: String,
     onShare: () -> Unit,
     onDone: () -> Unit
 ) {
@@ -276,6 +375,34 @@ private fun ExportCompleteContent(
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Show saved location
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = "Saved to:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = pdfPath,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
         
         Spacer(modifier = Modifier.height(32.dp))
         
