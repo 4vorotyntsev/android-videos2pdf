@@ -7,7 +7,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -26,21 +25,15 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     
     init {
-        loadProjects()
+        loadExports()
     }
     
-    private fun loadProjects() {
+    private fun loadExports() {
         viewModelScope.launch {
             try {
-                projectRepository.getAllProjects().collect { projects ->
-                    val projectsWithCounts = projects.map { project ->
-                        ProjectWithPageCount(
-                            project = project,
-                            pageCount = projectRepository.getPageCount(project.id)
-                        )
-                    }
+                projectRepository.getAllExports().collect { exports ->
                     _uiState.value = _uiState.value.copy(
-                        projects = projectsWithCounts,
+                        exports = exports,
                         isLoading = false
                     )
                 }
@@ -63,27 +56,9 @@ class HomeViewModel @Inject constructor(
         return project.id
     }
     
-    /**
-     * Creates a new project for importing a video.
-     * Returns the project ID.
-     */
-    suspend fun createImportProject(): String {
-        val title = generateProjectTitle()
-        val project = projectRepository.createProject(title)
-        return project.id
-    }
-    
-    /**
-     * Deletes a project.
-     */
-    fun deleteProject(projectId: String) {
-        viewModelScope.launch {
-            projectRepository.deleteProject(projectId)
-        }
-    }
-    
     private fun generateProjectTitle(): String {
         val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
         return "Scan ${dateFormat.format(Date())}"
     }
 }
+

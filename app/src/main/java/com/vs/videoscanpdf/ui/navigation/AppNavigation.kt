@@ -34,11 +34,9 @@ fun AppNavigation(
                 onRecordClick = { projectId ->
                     navController.navigate(Screen.Recorder.createRoute(projectId))
                 },
-                onImportClick = { projectId ->
-                    navController.navigate(Screen.FramePicker.createRoute(projectId))
-                },
-                onProjectClick = { projectId ->
-                    navController.navigate(Screen.FramePicker.createRoute(projectId))
+                onExportClick = {
+                    // For now, navigate to settings or could show a picker
+                    // In a full implementation, this might open a video picker
                 },
                 onSettingsClick = {
                     navController.navigate(Screen.Settings.route)
