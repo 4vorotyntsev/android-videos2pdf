@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VideoScan PDF</string>
+    
+    <!-- Home Screen -->
+    <string name="record_video">Record Video</string>
+    <string name="import_video">Import Video</string>
+    <string name="projects">Projects</string>
+    <string name="no_projects">No projects yet.\nRecord or import a video to get started.</string>
+    <string name="settings">Settings</string>
+    
+    <!-- Recorder Screen -->
+    <string name="guidance_title">Recording Tips</string>
+    <string name="guidance_text">• Flip pages naturally\n• Pause briefly on each page\n• Keep pages within frame</string>
+    <string name="tap_to_record">Tap to start recording</string>
+    <string name="tap_to_stop">Tap to stop</string>
+    <string name="recording_duration">Recording: %1$s</string>
+    
+    <!-- Frame Picker Screen -->
+    <string name="frame_picker_title">Select Pages</string>
+    <string name="add_page">Add Page</string>
+    <string name="selected_pages">Selected Pages (%1$d)</string>
+    <string name="no_pages_selected">No pages selected.\nScrub through video and tap Add Page.</string>
+    <string name="continue_to_editor">Continue</string>
+    
+    <!-- Page Editor Screen -->
+    <string name="page_editor_title">Edit Pages</string>
+    <string name="rotate">Rotate</string>
+    <string name="delete">Delete</string>
+    <string name="reorder_hint">Drag to reorder pages</string>
+    <string name="export_pdf">Export PDF</string>
+    
+    <!-- Export Screen -->
+    <string name="export_title">Export</string>
+    <string name="page_size">Page Size</string>
+    <string name="page_size_auto">Auto</string>
+    <string name="page_size_a4">A4</string>
+    <string name="page_size_letter">Letter</string>
+    <string name="quality">Quality</string>
+    <string name="quality_standard">Standard</string>
+    <string name="quality_high">High</string>
+    <string name="generate_pdf">Generate PDF</string>
+    <string name="share">Share</string>
+    <string name="save_to">Save to…</string>
+    <string name="export_success">PDF exported successfully</string>
+    <string name="export_failed">Export failed: %1$s</string>
+    
+    <!-- Settings Screen -->
+    <string name="video_quality">Video Quality</string>
+    <string name="video_quality_balanced">Balanced (1080p)</string>
+    <string name="video_quality_max">Maximum</string>
+    <string name="delete_video_after_export">Delete video after export</string>
+    <string name="delete_video_after_export_summary">Saves storage space after PDF is created</string>
+    <string name="diagnostics">Diagnostics</string>
+    <string name="export_diagnostics">Export diagnostics data</string>
+    
+    <!-- Permissions -->
+    <string name="camera_permission_required">Camera permission is required to record videos</string>
+    <string name="camera_permission_denied">Camera permission denied. Please enable it in Settings.</string>
+    
+    <!-- General -->
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="delete_project">Delete Project</string>
+    <string name="delete_project_confirm">Are you sure you want to delete this project? This cannot be undone.</string>
+    <string name="page">Page %1$d</string>
+    <string name="pages_count">%1$d pages</string>
+</resources>

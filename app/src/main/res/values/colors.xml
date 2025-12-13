@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary brand colors -->
+    <color name="primary">#FF2196F3</color>
+    <color name="primary_variant">#FF1976D2</color>
+    <color name="on_primary">#FFFFFFFF</color>
+    
+    <!-- Secondary colors -->
+    <color name="secondary">#FF03DAC6</color>
+    <color name="secondary_variant">#FF018786</color>
+    <color name="on_secondary">#FF000000</color>
+    
+    <!-- Background colors -->
+    <color name="background">#FFFFFFFF</color>
+    <color name="on_background">#FF1C1B1F</color>
+    <color name="surface">#FFFFFFFF</color>
+    <color name="on_surface">#FF1C1B1F</color>
+    
+    <!-- Error colors -->
+    <color name="error">#FFB00020</color>
+    <color name="on_error">#FFFFFFFF</color>
+    
+    <!-- Dark theme colors -->
+    <color name="background_dark">#FF121212</color>
+    <color name="surface_dark">#FF1E1E1E</color>
+    <color name="on_surface_dark">#FFFFFFFF</color>
+    
+    <!-- Recording indicator -->
+    <color name="recording_red">#FFFF4444</color>
+    
+    <!-- Scrubber colors -->
+    <color name="scrubber_played">#FF2196F3</color>
+    <color name="scrubber_buffered">#802196F3</color>
+    <color name="scrubber_unplayed">#40FFFFFF</color>
+</resources>
