@@ -122,10 +122,11 @@ class ExportViewModel @Inject constructor(
                     exportedPdfPath = pdfPath,
                     exportProgress = 1f
                 )
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
+                t.printStackTrace()
                 _uiState.value = _uiState.value.copy(
                     isExporting = false,
-                    error = "Export failed: ${e.message}"
+                    error = "Export failed: ${t.localizedMessage ?: "Unknown error"}"
                 )
             }
         }
@@ -149,8 +150,25 @@ class ExportViewModel @Inject constructor(
         val quality = _uiState.value.quality
         
         pages.forEachIndexed { index, page ->
-            // Load bitmap
-            val bitmap = BitmapFactory.decodeFile(page.imagePath) ?: return@forEachIndexed
+            // Perform efficient loading
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(page.imagePath, options)
+
+            // Determine max dimensions based on quality
+            // Standard: ~1080p equivalent (good for screen/standard print)
+            // High: ~4K equivalent (good for high quality print)
+            val maxDimension = when (quality) {
+                ExportQuality.STANDARD -> 1920
+                ExportQuality.HIGH -> 3840
+            }
+
+            options.inSampleSize = calculateInSampleSize(options, maxDimension, maxDimension)
+            options.inJustDecodeBounds = false
+
+            // Load bitmap with downsampling
+            val bitmap = BitmapFactory.decodeFile(page.imagePath, options) ?: return@forEachIndexed
             
             // Apply rotation if needed
             val rotatedBitmap = if (page.rotation != 0) {
@@ -205,10 +223,11 @@ class ExportViewModel @Inject constructor(
             
             pdfDocument.finishPage(pdfPage)
             
-            // Clean up rotated bitmap if we created one
+            // Clean up bitmaps explicitly to prevent OOM
             if (rotatedBitmap != bitmap) {
                 rotatedBitmap.recycle()
             }
+            bitmap.recycle()
             
             // Update progress
             val progress = (index + 1).toFloat() / pages.size
@@ -224,6 +243,22 @@ class ExportViewModel @Inject constructor(
         outputFile.absolutePath
     }
     
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        val (height: Int, width: Int) = options.run { outHeight to outWidth }
+        var inSampleSize = 1
+
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight: Int = height / 2
+            val halfWidth: Int = width / 2
+
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+
+        return inSampleSize
+    }
+
     private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
         val matrix = Matrix()
         matrix.postRotate(degrees)

@@ -2,6 +2,10 @@
 <paths>
     <!-- Internal files directory -->
     <files-path name="projects" path="projects/" />
+    <files-path name="exports" path="exports/" />
+    
+    <!-- External files directory (for app-specific public storage) -->
+    <external-files-path name="external_documents" path="Documents/" />
     
     <!-- Cache directory for temporary files -->
     <cache-path name="cache" path="." />

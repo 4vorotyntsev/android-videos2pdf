@@ -36,8 +36,12 @@ class SettingsRepository @Inject constructor(
      * Gets the default PDF save path (Documents/VideoScanPDF folder).
      */
     fun getDefaultPdfSavePath(): String {
-        val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-        return File(documentsDir, "VideoScanPDF").absolutePath
+        // Use app-specific external documents directory which doesn't require permissions
+        // and is accessible to the user via USB/File Managers
+        val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) 
+            ?: File(context.filesDir, "exports")
+        if (!dir.exists()) dir.mkdirs()
+        return dir.absolutePath
     }
     
     /**
@@ -171,19 +175,26 @@ class SettingsRepository @Inject constructor(
         val path = customPath ?: getDefaultPdfSavePath()
         val dir = File(path)
         
-        return try {
+        try {
             if (!dir.exists()) {
-                dir.mkdirs()
+                if (!dir.mkdirs()) {
+                    // Try to fall back to default if custom path failed
+                    if (path != getDefaultPdfSavePath()) {
+                        return ensurePdfSaveDirectory(null)
+                    }
+                }
             }
+            
             if (dir.canWrite()) {
-                dir
-            } else {
-                // Fall back to app's files directory
-                File(context.filesDir, "exports").also { it.mkdirs() }
+                return dir
             }
-        } catch (e: SecurityException) {
-            // Fall back to app's files directory
-            File(context.filesDir, "exports").also { it.mkdirs() }
+        } catch (e: Exception) {
+            // Ignore and fall back
         }
+        
+        // Final fallback to internal storage which is always writable
+        val fallback = File(context.filesDir, "exports")
+        if (!fallback.exists()) fallback.mkdirs()
+        return fallback
     }
 }
