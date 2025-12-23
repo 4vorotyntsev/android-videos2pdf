@@ -141,8 +141,53 @@ class SessionManager @Inject constructor(
     }
     
     /**
-     * Set detected moments from auto-detection.
+     * Add a manually selected page.
      */
+    fun addSelectedPage(page: SelectedPage) {
+        updateSession { session ->
+            val newPages = session.selectedPages + page
+            session.copy(
+                selectedPages = newPages,
+                pageOrder = newPages.map { it.id }
+            )
+        }
+    }
+    
+    /**
+     * Remove a manually selected page.
+     */
+    fun removeSelectedPage(pageId: String) {
+        updateSession { session ->
+            val newPages = session.selectedPages.filter { it.id != pageId }
+            session.copy(
+                selectedPages = newPages,
+                pageOrder = newPages.map { it.id }
+            )
+        }
+    }
+    
+    /**
+     * Reorder selected pages.
+     */
+    fun reorderSelectedPages(fromIndex: Int, toIndex: Int) {
+        updateSession { session ->
+            val pages = session.selectedPages.toMutableList()
+            if (fromIndex in pages.indices && toIndex in pages.indices) {
+                val page = pages.removeAt(fromIndex)
+                pages.add(toIndex, page)
+            }
+            session.copy(
+                selectedPages = pages,
+                pageOrder = pages.map { it.id }
+            )
+        }
+    }
+    
+    /**
+     * Set detected moments from auto-detection.
+     * @deprecated Use addSelectedPage for manual selection
+     */
+    @Deprecated("Use addSelectedPage for manual selection edition")
     fun setDetectedMoments(
         moments: List<DetectedMoment>,
         excluded: List<ExcludedMoment> = emptyList()
@@ -159,7 +204,9 @@ class SessionManager @Inject constructor(
     
     /**
      * Toggle selection of a moment.
+     * @deprecated Use addSelectedPage/removeSelectedPage for manual selection
      */
+    @Deprecated("Use addSelectedPage/removeSelectedPage for manual selection edition")
     fun toggleMomentSelection(momentId: String) {
         updateSession { session ->
             val newSelected = if (momentId in session.selectedMomentIds) {

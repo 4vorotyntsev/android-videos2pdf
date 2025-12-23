@@ -13,7 +13,9 @@ enum class SessionStatus {
     REVIEW_VIDEO,
     IMPORTING,
     TRIMMING,
-    AUTO_MOMENTS,
+    MANUAL_PICK,  // Manual page selection (user scrubs and picks pages)
+    @Deprecated("Use MANUAL_PICK instead - Manual Selection Edition")
+    AUTO_MOMENTS, // Legacy: kept for backward compatibility
     PAGE_REVIEW,
     PROCESSING,
     EXPORT_SETUP,
@@ -48,6 +50,16 @@ data class DetectedMoment(
     val thumbnail: Bitmap? = null,
     val isSelected: Boolean = true,
     val qualityScore: Float = 1f
+)
+
+/**
+ * Represents a manually selected page.
+ */
+data class SelectedPage(
+    val id: String = UUID.randomUUID().toString(),
+    val timeMs: Long,
+    val thumbnail: Bitmap? = null,
+    val capturedAt: Long = System.currentTimeMillis()
 )
 
 /**
@@ -93,14 +105,17 @@ data class Session(
     // Trim
     val trimRange: TrimRange = TrimRange(),
     
-    // Detected moments
+    // Manual page selection (new)
+    val selectedPages: List<SelectedPage> = emptyList(),
+    
+    // Legacy: Detected moments (kept for compatibility)
     val detectedMoments: List<DetectedMoment> = emptyList(),
     val excludedMoments: List<ExcludedMoment> = emptyList(),
     
     // Selected pages and edits
     val selectedMomentIds: Set<String> = emptySet(),
     val pageEdits: Map<String, PageEdit> = emptyMap(),
-    val pageOrder: List<String> = emptyList(), // Ordered moment IDs
+    val pageOrder: List<String> = emptyList(), // Ordered page IDs
     
     // Processing
     val processedImages: Map<String, File> = emptyMap(),
@@ -118,7 +133,7 @@ data class Session(
         get() = detectedMoments.filter { it.id in selectedMomentIds }
     
     val selectedCount: Int
-        get() = selectedMomentIds.size
+        get() = selectedPages.size.takeIf { it > 0 } ?: selectedMomentIds.size
     
     val excludedCount: Int
         get() = excludedMoments.size
@@ -131,14 +146,13 @@ data class Session(
         }
     
     val isValidForProcessing: Boolean
-        get() = selectedMomentIds.isNotEmpty() && sourceVideoUri != null
+        get() = (selectedPages.isNotEmpty() || selectedMomentIds.isNotEmpty()) && sourceVideoUri != null
 }
 
 enum class ProcessingStage {
     IDLE,
-    READING_VIDEO,
-    DETECTING_PAGES,
-    ENHANCING_IMAGES,
+    EXTRACTING_FRAMES,   // Extracting selected frames from video
+    ENHANCING_IMAGES,    // Document filter, perspective correction
     GENERATING_PDF,
     COMPLETE
 }

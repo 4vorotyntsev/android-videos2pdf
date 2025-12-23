@@ -12,7 +12,7 @@ import com.vs.videoscanpdf.ui.export.ExportResultScreen
 import com.vs.videoscanpdf.ui.export.ExportSetupScreen
 import com.vs.videoscanpdf.ui.home.HomeScreen
 import com.vs.videoscanpdf.ui.videoimport.ImportVideoScreen
-import com.vs.videoscanpdf.ui.moments.AutoMomentsScreen
+import com.vs.videoscanpdf.ui.pagepicker.ManualPagePickerScreen
 import com.vs.videoscanpdf.ui.editor.SinglePageEditorScreen
 import com.vs.videoscanpdf.ui.processing.ProcessingScreen
 import com.vs.videoscanpdf.ui.recorder.RecorderScreen
@@ -28,7 +28,8 @@ import com.vs.videoscanpdf.ui.trim.TrimVideoScreen
  * Navigation flow:
  * 1. Splash -> Onboarding (first run) or Main
  * 2. Main has bottom nav: Home | Exports | Help
- * 3. Scanning flow: Recorder/Import -> Trim -> AutoMoments -> Processing -> ExportSetup -> ExportResult
+ * 3. Scanning flow (Manual Selection Edition):
+ *    Recorder/Import -> Trim (optional) -> ManualPagePicker -> Processing -> ExportSetup -> ExportResult
  * 
  * Mode B behavior: Any back navigation during scanning flow discards the session.
  */
@@ -152,13 +153,14 @@ fun AppNavigation(
             TrimVideoScreen(
                 sessionId = sessionId,
                 onContinue = {
-                    navController.navigate(Screen.AutoMoments.createRoute(sessionId)) {
+                    // Navigate to Manual Page Picker (Manual Selection Edition)
+                    navController.navigate(Screen.ManualPagePicker.createRoute(sessionId)) {
                         popUpTo(Screen.TrimVideo.route) { inclusive = true }
                     }
                 },
                 onSkip = {
-                    // Skip trim, go directly to auto moments
-                    navController.navigate(Screen.AutoMoments.createRoute(sessionId)) {
+                    // Skip trim, go directly to manual page picker
+                    navController.navigate(Screen.ManualPagePicker.createRoute(sessionId)) {
                         popUpTo(Screen.TrimVideo.route) { inclusive = true }
                     }
                 },
@@ -169,24 +171,24 @@ fun AppNavigation(
             )
         }
         
-        // Auto moments screen (page detection)
+        // Manual page picker screen (Manual Selection Edition)
         composable(
-            route = Screen.AutoMoments.route,
+            route = Screen.ManualPagePicker.route,
             arguments = listOf(
                 navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
-            AutoMomentsScreen(
+            ManualPagePickerScreen(
                 sessionId = sessionId,
-                onCreatePdf = {
-                    // Go directly to processing
+                onContinue = {
+                    // Go directly to processing (enhances picked pages)
                     navController.navigate(Screen.Processing.createRoute(sessionId)) {
-                        popUpTo(Screen.AutoMoments.route) { inclusive = true }
+                        popUpTo(Screen.ManualPagePicker.route) { inclusive = true }
                     }
                 },
                 onReviewPages = {
-                    // Go to optional page review
+                    // Go to optional page review for reordering/editing
                     navController.navigate(Screen.PageReview.createRoute(sessionId))
                 },
                 onBack = {
@@ -218,7 +220,7 @@ fun AppNavigation(
             )
         }
         
-        // Page review screen (optional)
+        // Page review screen (optional - for reordering, editing, deleting pages)
         composable(
             route = Screen.PageReview.route,
             arguments = listOf(
@@ -229,7 +231,8 @@ fun AppNavigation(
             PageReviewScreen(
                 sessionId = sessionId,
                 onContinue = {
-                    navController.navigate(Screen.ExportSetup.createRoute(sessionId)) {
+                    // Go to processing to enhance the selected pages
+                    navController.navigate(Screen.Processing.createRoute(sessionId)) {
                         popUpTo(Screen.PageReview.route) { inclusive = true }
                     }
                 },
@@ -237,7 +240,7 @@ fun AppNavigation(
                     navController.navigate(Screen.SinglePageEditor.createRoute(sessionId, pageId))
                 },
                 onBack = {
-                    // Go back to auto moments (not home)
+                    // Go back to manual page picker
                     navController.popBackStack()
                 }
             )
@@ -277,7 +280,7 @@ fun AppNavigation(
                     }
                 },
                 onBack = {
-                    // Go back to auto moments or page review
+                    // Go back to previous screen
                     navController.popBackStack()
                 }
             )

@@ -59,11 +59,12 @@ import com.vs.videoscanpdf.ui.theme.StageComplete
 import com.vs.videoscanpdf.ui.theme.StagePending
 
 /**
- * Processing screen - shows progress while creating PDF.
+ * Processing screen - shows progress while enhancing selected pages.
  * 
- * Features:
- * - Title: "Making your PDF"
- * - Subtext: "Usually under a minute"
+ * Manual Selection Edition:
+ * - Title: "Making pages readable"
+ * - Subtext: "You picked X pages — we'll clean them up"
+ * - No page detection stage (user already picked pages)
  * - Friendly step labels (not numbered)
  * - Live first-page preview ASAP
  * - "Run in background" option
@@ -107,7 +108,7 @@ fun ProcessingScreen(
             
             // Title
             Text(
-                text = "Making your PDF",
+                text = "Making pages readable",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
@@ -115,11 +116,15 @@ fun ProcessingScreen(
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            // Subtitle
+            // Subtitle - shows page count from user's selection
             Text(
-                text = "Usually under a minute",
+                text = if (uiState.totalPages > 0) 
+                    "You picked ${uiState.totalPages} page${if (uiState.totalPages > 1) "s" else ""} — we'll clean them up"
+                else 
+                    "Usually under a minute",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
             )
             
             Spacer(modifier = Modifier.height(32.dp))
@@ -250,20 +255,16 @@ private fun PreviewCard(
 
 @Composable
 private fun ProcessingSteps(currentStage: ProcessingStage) {
+    // Manual Selection Edition: No page detection, user already picked pages
     val steps = listOf(
         StepInfo(
-            stage = ProcessingStage.READING_VIDEO,
-            label = "Reading video",
+            stage = ProcessingStage.EXTRACTING_FRAMES,
+            label = "Extracting your pages",
             icon = Icons.Default.Movie
         ),
         StepInfo(
-            stage = ProcessingStage.DETECTING_PAGES,
-            label = "Finding pages",
-            icon = Icons.Default.Description
-        ),
-        StepInfo(
             stage = ProcessingStage.ENHANCING_IMAGES,
-            label = "Making readable",
+            label = "Cleaning up",
             icon = Icons.Default.Image
         ),
         StepInfo(

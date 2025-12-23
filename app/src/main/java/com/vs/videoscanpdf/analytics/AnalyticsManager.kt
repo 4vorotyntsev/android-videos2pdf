@@ -34,9 +34,21 @@ object AnalyticsEvent {
     const val TRIM_CONTINUE = "trim_continue"
     const val TRIM_SKIP = "trim_skip"
     
-    // Auto moments events
+    // Manual page picker events (Manual Selection Edition)
+    const val PICKER_VIEW = "picker_view"
+    const val PICKER_ADD_PAGE = "picker_add_page"
+    const val PICKER_REMOVE_PAGE = "picker_remove_page"
+    const val PICKER_CONTINUE = "picker_continue"
+    const val PICKER_STEP_FORWARD = "picker_step_forward"
+    const val PICKER_STEP_BACKWARD = "picker_step_backward"
+    const val PICKER_SEEK = "picker_seek"
+    
+    // Legacy: Auto moments events (deprecated in Manual Selection Edition)
+    @Deprecated("Use PICKER_* events instead")
     const val MOMENTS_VIEW = "moments_view"
+    @Deprecated("Use PICKER_CONTINUE instead")
     const val MOMENTS_CREATE_CLICK = "moments_create_click"
+    @Deprecated("Use PICKER_CONTINUE instead")
     const val MOMENTS_REVIEW_CLICK = "moments_review_click"
     const val MOMENTS_ADVANCED_TOGGLE = "moments_advanced_toggle"
     
@@ -52,6 +64,7 @@ object AnalyticsEvent {
     const val PAGE_DELETE = "page_delete"
     const val PAGE_REPLACE = "page_replace"
     const val PAGE_EDIT_OPEN = "page_edit_open"
+    const val PAGE_REORDER = "page_reorder"
     const val REVIEW_CONTINUE = "review_continue"
     
     // Page editor events

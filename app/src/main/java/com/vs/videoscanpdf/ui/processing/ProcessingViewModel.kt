@@ -31,6 +31,15 @@ data class ProcessingUiState(
     val error: String? = null
 )
 
+/**
+ * ViewModel for Processing screen.
+ * 
+ * Manual Selection Edition:
+ * - No page detection stage (user already picked pages)
+ * - Extracts frames at selected timestamps
+ * - Enhances images (document filter, perspective correction)
+ * - Generates PDF
+ */
 @HiltViewModel
 class ProcessingViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -55,65 +64,97 @@ class ProcessingViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val session = sessionManager.currentSession ?: return@launch
-                val totalPages = session.selectedMomentIds.size
+                
+                // Manual Selection Edition: Use selectedPages first, fall back to detectedMoments
+                val totalPages = if (session.selectedPages.isNotEmpty()) {
+                    session.selectedPages.size
+                } else {
+                    session.selectedMomentIds.size
+                }
+                
+                if (totalPages == 0) {
+                    _uiState.value = _uiState.value.copy(error = "No pages selected")
+                    return@launch
+                }
                 
                 _uiState.value = _uiState.value.copy(totalPages = totalPages)
                 
-                // Stage 1: Reading video
+                // Stage 1: Extracting frames from video at selected timestamps
                 _uiState.value = _uiState.value.copy(
-                    currentStage = ProcessingStage.READING_VIDEO,
+                    currentStage = ProcessingStage.EXTRACTING_FRAMES,
                     overallProgress = 0.1f
                 )
-                sessionManager.updateProcessingProgress(ProcessingStage.READING_VIDEO, 0.1f)
+                sessionManager.updateProcessingProgress(ProcessingStage.EXTRACTING_FRAMES, 0.1f)
                 
-                delay(500) // Simulated work
-                if (isCancelled) return@launch
+                // Extract each frame
+                val pages = if (session.selectedPages.isNotEmpty()) {
+                    session.selectedPages
+                } else {
+                    session.detectedMoments.filter { it.id in session.selectedMomentIds }
+                }
                 
-                // Stage 2: Detecting pages
-                _uiState.value = _uiState.value.copy(
-                    currentStage = ProcessingStage.DETECTING_PAGES,
-                    overallProgress = 0.25f
-                )
-                sessionManager.updateProcessingProgress(ProcessingStage.DETECTING_PAGES, 0.25f)
-                
-                delay(500)
-                if (isCancelled) return@launch
-                
-                // Stage 3: Enhancing images
-                _uiState.value = _uiState.value.copy(
-                    currentStage = ProcessingStage.ENHANCING_IMAGES,
-                    overallProgress = 0.4f
-                )
-                sessionManager.updateProcessingProgress(ProcessingStage.ENHANCING_IMAGES, 0.4f)
-                
-                // Process each page
-                val selectedMoments = session.detectedMoments.filter { it.id in session.selectedMomentIds }
-                
-                selectedMoments.forEachIndexed { index, moment ->
+                pages.forEachIndexed { index, page ->
                     if (isCancelled) return@launch
                     
-                    val progress = 0.4f + (0.5f * (index + 1) / totalPages)
+                    val progress = 0.1f + (0.2f * (index + 1) / totalPages)
+                    val thumbnail = when (page) {
+                        is com.vs.videoscanpdf.data.session.SelectedPage -> page.thumbnail
+                        is com.vs.videoscanpdf.data.session.DetectedMoment -> page.thumbnail
+                        else -> null
+                    }
+                    
                     _uiState.value = _uiState.value.copy(
                         overallProgress = progress,
                         pagesProcessed = index + 1,
-                        previewBitmap = moment.thumbnail
+                        previewBitmap = thumbnail
                     )
-                    sessionManager.updateProcessingProgress(ProcessingStage.ENHANCING_IMAGES, progress)
+                    sessionManager.updateProcessingProgress(ProcessingStage.EXTRACTING_FRAMES, progress)
                     
-                    // Simulated enhancement
-                    delay(200)
+                    // Simulated frame extraction (real implementation would extract at timeMs)
+                    delay(100)
                 }
                 
                 if (isCancelled) return@launch
                 
-                // Stage 4: Generating PDF
+                // Stage 2: Enhancing images (document filter, perspective correction)
+                _uiState.value = _uiState.value.copy(
+                    currentStage = ProcessingStage.ENHANCING_IMAGES,
+                    overallProgress = 0.35f
+                )
+                sessionManager.updateProcessingProgress(ProcessingStage.ENHANCING_IMAGES, 0.35f)
+                
+                // Enhance each page
+                pages.forEachIndexed { index, page ->
+                    if (isCancelled) return@launch
+                    
+                    val progress = 0.35f + (0.5f * (index + 1) / totalPages)
+                    val thumbnail = when (page) {
+                        is com.vs.videoscanpdf.data.session.SelectedPage -> page.thumbnail
+                        is com.vs.videoscanpdf.data.session.DetectedMoment -> page.thumbnail
+                        else -> null
+                    }
+                    
+                    _uiState.value = _uiState.value.copy(
+                        overallProgress = progress,
+                        pagesProcessed = index + 1,
+                        previewBitmap = thumbnail
+                    )
+                    sessionManager.updateProcessingProgress(ProcessingStage.ENHANCING_IMAGES, progress)
+                    
+                    // Simulated enhancement (real implementation would apply document filter)
+                    delay(150)
+                }
+                
+                if (isCancelled) return@launch
+                
+                // Stage 3: Generating PDF
                 _uiState.value = _uiState.value.copy(
                     currentStage = ProcessingStage.GENERATING_PDF,
-                    overallProgress = 0.95f
+                    overallProgress = 0.9f
                 )
-                sessionManager.updateProcessingProgress(ProcessingStage.GENERATING_PDF, 0.95f)
+                sessionManager.updateProcessingProgress(ProcessingStage.GENERATING_PDF, 0.9f)
                 
-                delay(500)
+                delay(500) // Simulated PDF generation
                 if (isCancelled) return@launch
                 
                 // Complete

@@ -7,8 +7,10 @@ package com.vs.videoscanpdf.ui.navigation
  * Splash -> Onboarding (first run) -> Main
  * Main contains bottom nav: Home | Exports | Help
  * 
- * Scanning flow (ephemeral session):
- * Home -> Recorder/Import -> Trim -> AutoMoments -> Processing/PageReview -> ExportSetup -> ExportResult
+ * Scanning flow (Manual Selection Edition - ephemeral session):
+ * Home -> Recorder/Import -> Trim (optional) -> ManualPagePicker -> (optional PageReview) -> Processing -> ExportSetup -> ExportResult
+ * 
+ * Key change: User manually scrubs video and picks pages (no auto-detection).
  */
 sealed class Screen(val route: String) {
     // ===== Initial flow =====
@@ -38,7 +40,13 @@ sealed class Screen(val route: String) {
         fun createRoute(sessionId: String) = "trim_video/$sessionId"
     }
     
-    // Auto page moments detection (renamed from FramePicker)
+    // Manual page picker (user scrubs and picks pages)
+    data object ManualPagePicker : Screen("manual_page_picker/{sessionId}") {
+        fun createRoute(sessionId: String) = "manual_page_picker/$sessionId"
+    }
+    
+    // Legacy: Auto page moments detection (deprecated in manual selection edition)
+    @Deprecated("Use ManualPagePicker instead - Manual Selection Edition")
     data object AutoMoments : Screen("auto_moments/{sessionId}") {
         fun createRoute(sessionId: String) = "auto_moments/$sessionId"
     }
