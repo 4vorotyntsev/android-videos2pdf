@@ -14,3 +14,4 @@ class SplashViewModel @Inject constructor(
     val onboardingCompleted: Flow<Boolean> = settingsRepository.getOnboardingCompleted()
 }
 
+
