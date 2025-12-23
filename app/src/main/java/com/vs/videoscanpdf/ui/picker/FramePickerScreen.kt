@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
@@ -160,16 +163,36 @@ fun FramePickerScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(MaterialTheme.colorScheme.background)
         ) {
             // ============================================
-            // SECTION 1: CURRENT PICTURE (Full Screen Preview)
+            // TOP BAR with Back button
+            // ============================================
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+            
+            // ============================================
+            // SECTION 1: CURRENT FRAME (Large Preview)
             // ============================================
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f) // Takes all available space
-                    .background(Color.Black)
+                    .weight(1f)
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 AndroidView(
                     factory = { ctx ->
@@ -180,39 +203,6 @@ fun FramePickerScreen(
                     },
                     modifier = Modifier.fillMaxSize()
                 )
-                
-                // Back button overlay (top-left)
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                ) {
-                    Icon(
-                        Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White
-                    )
-                }
-                
-                // Continue button overlay (top-right)
-                if (viewModel.canContinue()) {
-                    Button(
-                        onClick = onContinue,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.PictureAsPdf,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("${uiState.selectedPages.size}")
-                    }
-                }
                 
                 // Play/Pause overlay (center)
                 Box(
@@ -232,277 +222,256 @@ fun FramePickerScreen(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = "Play",
                             modifier = Modifier
-                                .size(80.dp)
-                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                .size(72.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
                                 .padding(16.dp),
                             tint = Color.White
                         )
                     }
                 }
                 
-                // Add page FAB overlay (bottom-right)
-                FloatingActionButton(
-                    onClick = { viewModel.addCurrentFrame() },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_page))
-                }
-                
                 // Time indicator overlay (bottom-left)
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(16.dp)
-                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .padding(12.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = "${formatDuration(uiState.currentPositionMs)} / ${formatDuration(uiState.videoDurationMs)}",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = Color.White
                     )
                 }
             }
             
+            Spacer(modifier = Modifier.height(12.dp))
+            
             // ============================================
-            // SECTION 2: VIDEO PICTURES (Thumbnail Scrubber)
+            // SECTION 2: CAROUSEL + ADD BUTTON
             // ============================================
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-                    )
-                    .padding(vertical = 8.dp)
+                    .padding(horizontal = 16.dp)
+                    .height(100.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Slider for fine-grained scrubbing
-                Slider(
-                    value = sliderPosition,
-                    onValueChange = { value ->
-                        sliderPosition = value
-                        val position = (value * exoPlayer.duration).toLong()
-                        exoPlayer.seekTo(position)
-                        viewModel.seekTo(position)
-                    },
+                // Carousel of frames
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                )
-                
-                // Section header
-                Text(
-                    text = stringResource(R.string.frame_picker_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-                
-                // Video thumbnail strip
-                if (uiState.thumbnails.isNotEmpty()) {
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(72.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        items(uiState.thumbnails) { thumbnail ->
-                            Box(
-                                modifier = Modifier
-                                    .height(72.dp)
-                                    .aspectRatio(16f / 9f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .border(
-                                        width = if (kotlin.math.abs(uiState.currentPositionMs - thumbnail.timeMs) < 500) 3.dp else 0.dp,
-                                        color = if (kotlin.math.abs(uiState.currentPositionMs - thumbnail.timeMs) < 500) 
-                                            MaterialTheme.colorScheme.primary else Color.Transparent,
-                                        shape = RoundedCornerShape(8.dp)
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    if (uiState.thumbnails.isNotEmpty()) {
+                        LazyRow(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            items(uiState.thumbnails) { thumbnail ->
+                                val isCurrentFrame = kotlin.math.abs(uiState.currentPositionMs - thumbnail.timeMs) < 500
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .padding(vertical = 4.dp)
+                                        .aspectRatio(3f / 4f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(
+                                            width = if (isCurrentFrame) 3.dp else 0.dp,
+                                            color = if (isCurrentFrame) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            exoPlayer.seekTo(thumbnail.timeMs)
+                                            viewModel.seekTo(thumbnail.timeMs)
+                                        }
+                                ) {
+                                    Image(
+                                        bitmap = thumbnail.bitmap.asImageBitmap(),
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
                                     )
-                                    .clickable {
-                                        exoPlayer.seekTo(thumbnail.timeMs)
-                                        viewModel.seekTo(thumbnail.timeMs)
+                                }
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        }
+                    }
+                }
+                
+                // Add button
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { viewModel.addCurrentFrame() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = stringResource(R.string.add_page),
+                        modifier = Modifier.size(36.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // ============================================
+            // SECTION 3: SELECTED FRAMES + NEXT BUTTON
+            // ============================================
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 16.dp)
+                    .height(140.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Selected frames
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    if (uiState.selectedPages.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(R.string.no_pages_selected),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        LazyRow(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            items(
+                                items = uiState.selectedPages,
+                                key = { it.id }
+                            ) { page ->
+                                SelectedFrameCard(
+                                    page = page,
+                                    onRemove = { viewModel.removePage(page.id) },
+                                    onClick = {
+                                        exoPlayer.seekTo(page.timeMs)
+                                        viewModel.seekTo(page.timeMs)
                                     }
-                            ) {
-                                Image(
-                                    bitmap = thumbnail.bitmap.asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
                                 )
                             }
                         }
                     }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(72.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    }
-                }
-            }
-            
-
-            
-            // ============================================
-            // SECTION 3: COLLECTED PICTURES (Selected Pages)
-            // ============================================
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(vertical = 8.dp)
-            ) {
-                // Section header with count
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(R.string.selected_pages, uiState.selectedPages.size),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    
-                    if (uiState.selectedPages.isNotEmpty()) {
-                        Button(
-                            onClick = onContinue,
-                            modifier = Modifier.height(36.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PictureAsPdf,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = stringResource(R.string.continue_to_editor),
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-                    }
                 }
                 
-                // Collected pages strip
-                if (uiState.selectedPages.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(R.string.no_pages_selected),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                // Next button
+                Box(
+                    modifier = Modifier
+                        .width(80.dp)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (uiState.selectedPages.isNotEmpty()) 
+                                MaterialTheme.colorScheme.surfaceVariant 
+                            else 
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         )
-                    }
-                } else {
-                    LazyRow(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(
-                            items = uiState.selectedPages,
-                            key = { it.id }
-                        ) { page ->
-                            SelectedPageCard(
-                                page = page,
-                                pageNumber = uiState.selectedPages.indexOf(page) + 1,
-                                onRemove = { viewModel.removePage(page.id) },
-                                onClick = {
-                                    exoPlayer.seekTo(page.timeMs)
-                                    viewModel.seekTo(page.timeMs)
-                                }
-                            )
-                        }
-                    }
+                        .clickable(enabled = uiState.selectedPages.isNotEmpty()) { onContinue() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = stringResource(R.string.continue_to_editor),
+                        modifier = Modifier.size(32.dp),
+                        tint = if (uiState.selectedPages.isNotEmpty()) 
+                            MaterialTheme.colorScheme.onSurfaceVariant 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                    )
                 }
             }
         }
     }
 }
 
+// Purple accent color for selected frames
+private val SelectedFrameColor = Color(0xFFBA68C8)
+
 @Composable
-private fun SelectedPageCard(
+private fun SelectedFrameCard(
     page: SelectedPage,
-    pageNumber: Int,
     onRemove: () -> Unit,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
-            .width(100.dp)
+            .fillMaxHeight()
+            .padding(vertical = 4.dp)
             .aspectRatio(3f / 4f)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .clip(RoundedCornerShape(8.dp))
-                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                .border(3.dp, SelectedFrameColor, RoundedCornerShape(8.dp))
                 .clickable(onClick = onClick)
         ) {
             page.thumbnail?.let { bitmap ->
                 Image(
                     bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "Page $pageNumber",
+                    contentDescription = "Selected frame",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
             } ?: Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(SelectedFrameColor.copy(alpha = 0.3f)),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            }
-            
-            // Page number badge
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(4.dp)
-                    .background(
-                        MaterialTheme.colorScheme.primary,
-                        RoundedCornerShape(4.dp)
-                    )
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = "$pageNumber",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimary
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    color = SelectedFrameColor
                 )
             }
         }
         
-        // Remove button
-        IconButton(
-            onClick = onRemove,
+        // Small remove button (top-right corner)
+        Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .size(24.dp)
+                .offset(x = 6.dp, y = (-6).dp)
+                .size(20.dp)
                 .background(MaterialTheme.colorScheme.error, CircleShape)
+                .clickable(onClick = onRemove),
+            contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.Default.Close,
                 contentDescription = "Remove",
-                tint = MaterialTheme.colorScheme.onError,
-                modifier = Modifier.size(16.dp)
+                tint = Color.White,
+                modifier = Modifier.size(12.dp)
             )
         }
     }
