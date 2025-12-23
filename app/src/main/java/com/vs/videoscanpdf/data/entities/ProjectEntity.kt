@@ -5,6 +5,14 @@ import androidx.room.PrimaryKey
 import java.util.UUID
 
 /**
+ * Project status enum.
+ */
+enum class ProjectStatus {
+    DRAFT,
+    EXPORTED
+}
+
+/**
  * Represents a scanning project containing a video and extracted pages.
  */
 @Entity(tableName = "projects")
@@ -16,5 +24,7 @@ data class ProjectEntity(
     val updatedAt: Long = System.currentTimeMillis(),
     val videoPath: String? = null,
     val videoDurationMs: Long = 0L,
-    val isVideoDeleted: Boolean = false
+    val isVideoDeleted: Boolean = false,
+    val status: String = ProjectStatus.DRAFT.name,
+    val thumbnailPath: String? = null
 )

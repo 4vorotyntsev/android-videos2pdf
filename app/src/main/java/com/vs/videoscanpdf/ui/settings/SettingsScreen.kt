@@ -141,6 +141,44 @@ fun SettingsScreen(
             
             item { HorizontalDivider() }
             
+            // Default Output Profile Section
+            item {
+                SettingsSection(title = "Default Output Profile") {
+                    com.vs.videoscanpdf.data.repository.SettingsRepository.OutputProfile.entries.forEach { profile ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setOutputProfile(profile) }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = uiState.outputProfile == profile,
+                                onClick = { viewModel.setOutputProfile(profile) }
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = profile.displayName,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                Text(
+                                    text = when (profile) {
+                                        com.vs.videoscanpdf.data.repository.SettingsRepository.OutputProfile.EMAIL_FRIENDLY -> "Smaller file size, good for sharing"
+                                        com.vs.videoscanpdf.data.repository.SettingsRepository.OutputProfile.BALANCED -> "Balance between quality and size"
+                                        com.vs.videoscanpdf.data.repository.SettingsRepository.OutputProfile.PRINT_QUALITY -> "High quality for printing"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            item { HorizontalDivider() }
+            
             // Storage Section
             item {
                 SettingsSection(title = "Storage") {
@@ -151,6 +189,62 @@ fun SettingsScreen(
                         checked = uiState.deleteVideoAfterExport,
                         onCheckedChange = { viewModel.setDeleteVideoAfterExport(it) }
                     )
+                    
+                    SettingsToggleItem(
+                        icon = Icons.Default.Folder,
+                        title = "Keep intermediate images",
+                        subtitle = "Keeps extracted frames after export (uses more storage)",
+                        checked = uiState.keepIntermediateImages,
+                        onCheckedChange = { viewModel.setKeepIntermediateImages(it) }
+                    )
+                    
+                    SettingsClickableItem(
+                        icon = Icons.Default.Delete,
+                        title = "Clear cache",
+                        subtitle = "Current cache size: ${uiState.cacheSize}",
+                        onClick = { viewModel.clearCache() }
+                    )
+                }
+            }
+            
+            item { HorizontalDivider() }
+            
+            // Privacy Section
+            item {
+                SettingsSection(title = "Privacy") {
+                    androidx.compose.material3.Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Local Processing",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    text = "All processing happens on your device. Your documents never leave your phone.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
                 }
             }
             

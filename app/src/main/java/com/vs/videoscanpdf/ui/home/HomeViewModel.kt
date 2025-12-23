@@ -27,6 +27,7 @@ class HomeViewModel @Inject constructor(
     
     init {
         loadExports()
+        loadRecentProjects()
     }
     
     private fun loadExports() {
@@ -43,6 +44,21 @@ class HomeViewModel @Inject constructor(
                     error = e.message,
                     isLoading = false
                 )
+            }
+        }
+    }
+    
+    private fun loadRecentProjects() {
+        viewModelScope.launch {
+            try {
+                projectRepository.getAllProjects().collect { projects ->
+                    _uiState.value = _uiState.value.copy(
+                        recentProjects = projects.take(5),
+                        isLoading = false
+                    )
+                }
+            } catch (e: Exception) {
+                // Silently handle - exports are primary
             }
         }
     }

@@ -1,5 +1,7 @@
 package com.vs.videoscanpdf.ui.export
 
+import android.graphics.Bitmap
+
 /**
  * UI state for the Export screen.
  */
@@ -13,6 +15,8 @@ data class ExportUiState(
     val isExporting: Boolean = false,
     val exportProgress: Float = 0f,
     val exportedPdfPath: String? = null,
+    val exportedFileSize: Long = 0L,
+    val firstPageBitmap: Bitmap? = null,
     val error: String? = null
 )
 

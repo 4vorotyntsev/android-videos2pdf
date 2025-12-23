@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Environment
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -30,6 +31,18 @@ class SettingsRepository @Inject constructor(
         val USE_MAX_QUALITY = stringPreferencesKey("use_max_quality")
         val USE_GRAYSCALE = stringPreferencesKey("use_grayscale")
         val PDF_FILE_NAME = stringPreferencesKey("pdf_file_name")
+        val ONBOARDING_COMPLETED = booleanPreferencesKey("onboarding_completed")
+        val OUTPUT_PROFILE = stringPreferencesKey("output_profile")
+        val KEEP_INTERMEDIATE_IMAGES = booleanPreferencesKey("keep_intermediate_images")
+    }
+    
+    /**
+     * Output quality profiles for PDF export.
+     */
+    enum class OutputProfile(val displayName: String, val quality: Int) {
+        EMAIL_FRIENDLY("Email-friendly", 60),
+        BALANCED("Balanced", 80),
+        PRINT_QUALITY("Print quality", 95)
     }
     
     /**
@@ -196,5 +209,64 @@ class SettingsRepository @Inject constructor(
         val fallback = File(context.filesDir, "exports")
         if (!fallback.exists()) fallback.mkdirs()
         return fallback
+    }
+    
+    /**
+     * Gets whether onboarding has been completed.
+     */
+    fun getOnboardingCompleted(): Flow<Boolean> {
+        return context.dataStore.data.map { preferences ->
+            preferences[Keys.ONBOARDING_COMPLETED] ?: false
+        }
+    }
+    
+    /**
+     * Sets onboarding as completed.
+     */
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.ONBOARDING_COMPLETED] = completed
+        }
+    }
+    
+    /**
+     * Gets the current output profile.
+     */
+    fun getOutputProfile(): Flow<OutputProfile> {
+        return context.dataStore.data.map { preferences ->
+            val name = preferences[Keys.OUTPUT_PROFILE] ?: OutputProfile.BALANCED.name
+            try {
+                OutputProfile.valueOf(name)
+            } catch (e: IllegalArgumentException) {
+                OutputProfile.BALANCED
+            }
+        }
+    }
+    
+    /**
+     * Sets the output profile.
+     */
+    suspend fun setOutputProfile(profile: OutputProfile) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.OUTPUT_PROFILE] = profile.name
+        }
+    }
+    
+    /**
+     * Gets whether to keep intermediate images.
+     */
+    fun getKeepIntermediateImages(): Flow<Boolean> {
+        return context.dataStore.data.map { preferences ->
+            preferences[Keys.KEEP_INTERMEDIATE_IMAGES] ?: false
+        }
+    }
+    
+    /**
+     * Sets whether to keep intermediate images.
+     */
+    suspend fun setKeepIntermediateImages(keep: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.KEEP_INTERMEDIATE_IMAGES] = keep
+        }
     }
 }

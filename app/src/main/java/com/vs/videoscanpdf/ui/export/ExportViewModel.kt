@@ -68,6 +68,23 @@ class ExportViewModel @Inject constructor(
         viewModelScope.launch {
             val count = projectRepository.getPageCount(currentProjectId)
             _uiState.value = _uiState.value.copy(pageCount = count)
+            
+            // Load first page bitmap for preview
+            val pages = projectRepository.getPagesByProjectSync(currentProjectId)
+            if (pages.isNotEmpty()) {
+                val firstPage = pages.first()
+                val bitmap = withContext(Dispatchers.IO) {
+                    try {
+                        val options = BitmapFactory.Options().apply {
+                            inSampleSize = 4 // Load smaller preview
+                        }
+                        BitmapFactory.decodeFile(firstPage.imagePath, options)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                _uiState.value = _uiState.value.copy(firstPageBitmap = bitmap)
+            }
         }
     }
     
@@ -117,9 +134,15 @@ class ExportViewModel @Inject constructor(
                 )
                 projectRepository.addExport(export)
                 
+                // Get file size
+                val fileSize = withContext(Dispatchers.IO) {
+                    File(pdfPath).length()
+                }
+                
                 _uiState.value = _uiState.value.copy(
                     isExporting = false,
                     exportedPdfPath = pdfPath,
+                    exportedFileSize = fileSize,
                     exportProgress = 1f
                 )
             } catch (t: Throwable) {
@@ -285,6 +308,54 @@ class ExportViewModel @Inject constructor(
         context.startActivity(Intent.createChooser(intent, "Share PDF").apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         })
+    }
+    
+    fun openPdf() {
+        val pdfPath = _uiState.value.exportedPdfPath ?: return
+        val file = File(pdfPath)
+        
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/pdf")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        
+        try {
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            _uiState.value = _uiState.value.copy(error = "No app found to open PDF")
+        }
+    }
+    
+    fun savePdfTo() {
+        val pdfPath = _uiState.value.exportedPdfPath ?: return
+        val file = File(pdfPath)
+        
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_TITLE, file.name)
+            addCategory(Intent.CATEGORY_OPENABLE)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        
+        try {
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            // Fallback to share if save to fails
+            sharePdf()
+        }
     }
     
     fun clearError() {

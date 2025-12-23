@@ -22,7 +22,7 @@ import com.vs.videoscanpdf.data.entities.TelemetryEventEntity
         ExportEntity::class,
         TelemetryEventEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

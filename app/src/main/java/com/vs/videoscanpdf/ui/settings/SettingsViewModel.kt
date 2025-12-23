@@ -22,7 +22,10 @@ data class SettingsUiState(
     val useMaxQuality: Boolean = false,
     val useGrayscale: Boolean = false,
     val isEditingPath: Boolean = false,
-    val isEditingFileName: Boolean = false
+    val isEditingFileName: Boolean = false,
+    val outputProfile: SettingsRepository.OutputProfile = SettingsRepository.OutputProfile.BALANCED,
+    val keepIntermediateImages: Boolean = false,
+    val cacheSize: String = "0 MB"
 )
 
 /**
@@ -66,6 +69,30 @@ class SettingsViewModel @Inject constructor(
             settingsRepository.getUseGrayscale().collect { grayscale ->
                 _uiState.value = _uiState.value.copy(useGrayscale = grayscale)
             }
+        }
+        viewModelScope.launch {
+            settingsRepository.getOutputProfile().collect { profile ->
+                _uiState.value = _uiState.value.copy(outputProfile = profile)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getKeepIntermediateImages().collect { keep ->
+                _uiState.value = _uiState.value.copy(keepIntermediateImages = keep)
+            }
+        }
+        calculateCacheSize()
+    }
+    
+    private fun calculateCacheSize() {
+        viewModelScope.launch {
+            val cacheDir = context.cacheDir
+            val size = cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            val sizeStr = when {
+                size < 1024 -> "$size B"
+                size < 1024 * 1024 -> "${size / 1024} KB"
+                else -> String.format("%.1f MB", size / (1024.0 * 1024.0))
+            }
+            _uiState.value = _uiState.value.copy(cacheSize = sizeStr)
         }
     }
     
@@ -134,6 +161,29 @@ class SettingsViewModel @Inject constructor(
             val defaultName = settingsRepository.getDefaultPdfFileName()
             settingsRepository.setPdfFileName(defaultName)
             _uiState.value = _uiState.value.copy(pdfFileName = defaultName, isEditingFileName = false)
+        }
+    }
+    
+    fun setOutputProfile(profile: SettingsRepository.OutputProfile) {
+        viewModelScope.launch {
+            settingsRepository.setOutputProfile(profile)
+            _uiState.value = _uiState.value.copy(outputProfile = profile)
+        }
+    }
+    
+    fun setKeepIntermediateImages(keep: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setKeepIntermediateImages(keep)
+            _uiState.value = _uiState.value.copy(keepIntermediateImages = keep)
+        }
+    }
+    
+    fun clearCache() {
+        viewModelScope.launch {
+            val cacheDir = context.cacheDir
+            cacheDir.deleteRecursively()
+            cacheDir.mkdirs()
+            calculateCacheSize()
         }
     }
 }

@@ -12,7 +12,9 @@ data class RecorderUiState(
     val zoomLevel: Float = 0f,
     val showGuidance: Boolean = true,
     val error: String? = null,
-    val recordingComplete: Boolean = false
+    val recordingComplete: Boolean = false,
+    val showReviewButtons: Boolean = false,
+    val recordedVideoPath: String? = null
 )
 
 /**

@@ -176,7 +176,11 @@ class RecorderViewModel @Inject constructor(
                             outputFile.absolutePath,
                             durationMs
                         )
-                        _uiState.value = _uiState.value.copy(recordingComplete = true)
+                        // Show Use/Retake buttons instead of auto-navigating
+                        _uiState.value = _uiState.value.copy(
+                            showReviewButtons = true,
+                            recordedVideoPath = outputFile.absolutePath
+                        )
                     }
                 } else {
                     _uiState.value = _uiState.value.copy(
@@ -207,6 +211,29 @@ class RecorderViewModel @Inject constructor(
     
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+    
+    /**
+     * User confirmed to use the recorded video.
+     */
+    fun useVideo() {
+        _uiState.value = _uiState.value.copy(recordingComplete = true)
+    }
+    
+    /**
+     * User wants to retake the video.
+     */
+    fun retake() {
+        // Delete the recorded video
+        _uiState.value.recordedVideoPath?.let { path ->
+            File(path).delete()
+        }
+        
+        // Reset state
+        _uiState.value = _uiState.value.copy(
+            showReviewButtons = false,
+            recordedVideoPath = null
+        )
     }
     
     override fun onCleared() {

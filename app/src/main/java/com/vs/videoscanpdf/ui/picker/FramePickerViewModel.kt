@@ -169,6 +169,108 @@ class FramePickerViewModel @Inject constructor(
                 // Update progressively
                 _uiState.value = _uiState.value.copy(thumbnails = thumbnails.toList())
             }
+            
+            // Auto-detect pages after thumbnails are loaded
+            autoDetectPages()
+        }
+    }
+    
+    /**
+     * Auto-detect page moments from the video.
+     * Since CV is skipped, this uses a simple interval-based approach.
+     */
+    private suspend fun autoDetectPages() = withContext(Dispatchers.IO) {
+        val duration = _uiState.value.videoDurationMs
+        if (duration <= 0) return@withContext
+        
+        _uiState.value = _uiState.value.copy(isAutoDetecting = true, autoDetectionProgress = 0f)
+        
+        val density = _uiState.value.extractionDensity
+        // Calculate interval based on density: more density = more pages
+        val baseInterval = 3000L // 3 seconds base
+        val interval = (baseInterval * (1.5f - density)).toLong().coerceAtLeast(1500L)
+        
+        val detectedPages = mutableListOf<DetectedPage>()
+        var time = interval / 2 // Start from middle of first interval
+        var progress = 0f
+        
+        while (time < duration) {
+            val bitmap = extractFrame(time)
+            if (bitmap != null) {
+                detectedPages.add(
+                    DetectedPage(
+                        timeMs = time,
+                        thumbnail = bitmap,
+                        isSelected = true,
+                        quality = PageQuality.GOOD
+                    )
+                )
+            }
+            time += interval
+            progress = (time.toFloat() / duration).coerceAtMost(1f)
+            _uiState.value = _uiState.value.copy(
+                autoDetectionProgress = progress,
+                detectedPages = detectedPages.toList()
+            )
+        }
+        
+        _uiState.value = _uiState.value.copy(
+            isAutoDetecting = false,
+            autoDetectionProgress = 1f,
+            detectedPages = detectedPages.toList()
+        )
+    }
+    
+    fun toggleAdvancedSettings() {
+        _uiState.value = _uiState.value.copy(
+            showAdvancedSettings = !_uiState.value.showAdvancedSettings
+        )
+    }
+    
+    fun setExtractionDensity(density: Float) {
+        _uiState.value = _uiState.value.copy(extractionDensity = density)
+    }
+    
+    fun rerunAutoDetection() {
+        viewModelScope.launch(Dispatchers.IO) {
+            autoDetectPages()
+        }
+    }
+    
+    fun toggleDetectedPageSelection(timeMs: Long) {
+        val updatedPages = _uiState.value.detectedPages.map { page ->
+            if (page.timeMs == timeMs) {
+                page.copy(isSelected = !page.isSelected)
+            } else {
+                page
+            }
+        }
+        _uiState.value = _uiState.value.copy(detectedPages = updatedPages)
+    }
+    
+    /**
+     * Add all selected detected pages to the project.
+     */
+    fun confirmDetectedPages() {
+        viewModelScope.launch {
+            val selectedDetected = _uiState.value.detectedPages.filter { it.isSelected }
+            
+            selectedDetected.forEachIndexed { index, detected ->
+                val pageId = UUID.randomUUID().toString()
+                val bitmap = detected.thumbnail ?: extractFrame(detected.timeMs) ?: return@forEachIndexed
+                
+                val imagePath = saveFrameToFile(pageId, bitmap)
+                
+                val page = PageEntity(
+                    id = pageId,
+                    projectId = currentProjectId,
+                    index = index,
+                    sourceTimeMs = detected.timeMs,
+                    imagePath = imagePath
+                )
+                
+                projectRepository.addPage(page)
+            }
         }
     }
     
