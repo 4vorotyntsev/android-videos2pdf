@@ -3,6 +3,11 @@ package com.vs.videoscanpdf.ui.recorder
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.StatFs
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -19,6 +24,8 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vs.videoscanpdf.data.repository.ProjectRepository
+import com.vs.videoscanpdf.data.session.SessionManager
+import com.vs.videoscanpdf.data.session.SessionStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,16 +35,27 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.Executor
 import javax.inject.Inject
+import kotlin.math.sqrt
+
+/**
+ * Stability state for user feedback.
+ */
+enum class StabilityState {
+    STABLE,
+    SLIGHTLY_SHAKY,
+    TOO_SHAKY
+}
 
 /**
  * ViewModel for the Recorder screen.
- * Manages CameraX setup and video recording.
+ * Manages CameraX setup, video recording, and stability detection.
  */
 @HiltViewModel
 class RecorderViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val projectRepository: ProjectRepository
-) : ViewModel() {
+    private val projectRepository: ProjectRepository,
+    private val sessionManager: SessionManager
+) : ViewModel(), SensorEventListener {
     
     private val _uiState = MutableStateFlow(RecorderUiState())
     val uiState: StateFlow<RecorderUiState> = _uiState.asStateFlow()
@@ -48,12 +66,79 @@ class RecorderViewModel @Inject constructor(
     private var camera: androidx.camera.core.Camera? = null
     private var recordingStartTime: Long = 0L
     
-    private lateinit var currentProjectId: String
+    private var sessionId: String? = null
     private lateinit var outputFile: File
     
-    fun initialize(projectId: String) {
-        currentProjectId = projectId
+    // Stability detection
+    private val sensorManager: SensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private val accelerometer: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+    private var lastAcceleration = 0f
+    private val accelerationHistory = mutableListOf<Float>()
+    
+    companion object {
+        private const val MIN_FREE_SPACE_MB = 100L // Minimum 100MB free space
+        private const val STABILITY_THRESHOLD_STABLE = 1.5f
+        private const val STABILITY_THRESHOLD_SHAKY = 3.0f
     }
+    
+    fun initialize(sessionId: String) {
+        this.sessionId = sessionId
+        sessionManager.setStatus(SessionStatus.RECORDING)
+        
+        // Check available storage
+        checkStorage()
+        
+        // Start stability monitoring
+        startStabilityMonitoring()
+    }
+    
+    private fun checkStorage() {
+        val stat = StatFs(context.cacheDir.path)
+        val availableMB = stat.availableBytes / (1024 * 1024)
+        
+        if (availableMB < MIN_FREE_SPACE_MB) {
+            _uiState.value = _uiState.value.copy(
+                hasLowStorage = true,
+                error = "Low storage space. Please free up some space before recording."
+            )
+        }
+    }
+    
+    private fun startStabilityMonitoring() {
+        accelerometer?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
+        }
+    }
+    
+    override fun onSensorChanged(event: SensorEvent?) {
+        event?.let { e ->
+            if (e.sensor.type == Sensor.TYPE_ACCELEROMETER && _uiState.value.isRecording) {
+                val x = e.values[0]
+                val y = e.values[1]
+                val z = e.values[2]
+                
+                val acceleration = sqrt(x * x + y * y + z * z)
+                val delta = kotlin.math.abs(acceleration - lastAcceleration)
+                lastAcceleration = acceleration
+                
+                accelerationHistory.add(delta)
+                if (accelerationHistory.size > 10) {
+                    accelerationHistory.removeAt(0)
+                }
+                
+                val avgDelta = accelerationHistory.average().toFloat()
+                val stability = when {
+                    avgDelta < STABILITY_THRESHOLD_STABLE -> StabilityState.STABLE
+                    avgDelta < STABILITY_THRESHOLD_SHAKY -> StabilityState.SLIGHTLY_SHAKY
+                    else -> StabilityState.TOO_SHAKY
+                }
+                
+                _uiState.value = _uiState.value.copy(stabilityState = stability)
+            }
+        }
+    }
+    
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     
     fun hasCameraPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
@@ -120,13 +205,24 @@ class RecorderViewModel @Inject constructor(
     }
     
     fun startRecording() {
+        if (_uiState.value.hasLowStorage) {
+            _uiState.value = _uiState.value.copy(error = "Not enough storage space")
+            return
+        }
+        
         val videoCapture = videoCapture ?: return
         
-        // Prepare output file
-        outputFile = projectRepository.getVideoPath(currentProjectId)
-        outputFile.parentFile?.mkdirs()
+        // Prepare output file in session temp directory
+        val session = sessionManager.currentSession
+        val tempDir = session?.tempDir ?: File(context.cacheDir, "temp_recording")
+        tempDir.mkdirs()
+        
+        outputFile = File(tempDir, "recording_${System.currentTimeMillis()}.mp4")
         
         val outputOptions = FileOutputOptions.Builder(outputFile).build()
+        
+        accelerationHistory.clear()
+        lastAcceleration = SensorManager.GRAVITY_EARTH
         
         activeRecording = videoCapture.output
             .prepareRecording(context, outputOptions)
@@ -137,7 +233,8 @@ class RecorderViewModel @Inject constructor(
         recordingStartTime = System.currentTimeMillis()
         _uiState.value = _uiState.value.copy(
             isRecording = true,
-            recordingDurationMs = 0L
+            recordingDurationMs = 0L,
+            stabilityState = StabilityState.STABLE
         )
         
         // Start duration timer
@@ -169,19 +266,20 @@ class RecorderViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(isRecording = false)
                 
                 if (!event.hasError()) {
-                    // Save video info to project
-                    viewModelScope.launch {
-                        projectRepository.setVideoPath(
-                            currentProjectId,
-                            outputFile.absolutePath,
-                            durationMs
-                        )
-                        // Show Use/Retake buttons instead of auto-navigating
-                        _uiState.value = _uiState.value.copy(
-                            showReviewButtons = true,
-                            recordedVideoPath = outputFile.absolutePath
-                        )
-                    }
+                    // Update session with video info
+                    sessionManager.setSourceVideo(
+                        uri = outputFile.absolutePath,
+                        durationMs = durationMs,
+                        isImported = false
+                    )
+                    sessionManager.setStatus(SessionStatus.REVIEW_VIDEO)
+                    
+                    // Show Use/Retake buttons
+                    _uiState.value = _uiState.value.copy(
+                        showReviewButtons = true,
+                        recordedVideoPath = outputFile.absolutePath,
+                        recordingDurationMs = durationMs
+                    )
                 } else {
                     _uiState.value = _uiState.value.copy(
                         error = "Recording failed: ${event.error}"
@@ -229,6 +327,8 @@ class RecorderViewModel @Inject constructor(
             File(path).delete()
         }
         
+        sessionManager.setStatus(SessionStatus.RECORDING)
+        
         // Reset state
         _uiState.value = _uiState.value.copy(
             showReviewButtons = false,
@@ -240,5 +340,6 @@ class RecorderViewModel @Inject constructor(
         super.onCleared()
         activeRecording?.stop()
         cameraProvider?.unbindAll()
+        sensorManager.unregisterListener(this)
     }
 }

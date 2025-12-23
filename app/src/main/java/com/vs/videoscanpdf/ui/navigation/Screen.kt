@@ -2,50 +2,106 @@ package com.vs.videoscanpdf.ui.navigation
 
 /**
  * Navigation routes for the app.
+ * 
+ * Flow structure:
+ * Splash -> Onboarding (first run) -> Main
+ * Main contains bottom nav: Home | Exports | Help
+ * 
+ * Scanning flow (ephemeral session):
+ * Home -> Recorder/Import -> Trim -> AutoMoments -> Processing/PageReview -> ExportSetup -> ExportResult
  */
 sealed class Screen(val route: String) {
-    // Initial flow
+    // ===== Initial flow =====
     data object Splash : Screen("splash")
     data object Onboarding : Screen("onboarding")
     
-    // Main tabs (bottom navigation)
+    // ===== Main tabs (bottom navigation) =====
     data object Main : Screen("main")
     data object Home : Screen("home")
-    data object Projects : Screen("projects")
+    data object ExportsLibrary : Screen("exports_library")  // Renamed from Projects
     data object Help : Screen("help")
     
-    // Scanning flow
-    data object Recorder : Screen("recorder/{projectId}") {
-        fun createRoute(projectId: String) = "recorder/$projectId"
+    // ===== Scanning flow screens =====
+    
+    // Camera recording
+    data object Recorder : Screen("recorder/{sessionId}") {
+        fun createRoute(sessionId: String) = "recorder/$sessionId"
     }
+    
+    // Video import
+    data object ImportVideo : Screen("import_video/{sessionId}") {
+        fun createRoute(sessionId: String) = "import_video/$sessionId"
+    }
+    
+    // Trim video (new screen)
+    data object TrimVideo : Screen("trim_video/{sessionId}") {
+        fun createRoute(sessionId: String) = "trim_video/$sessionId"
+    }
+    
+    // Auto page moments detection (renamed from FramePicker)
+    data object AutoMoments : Screen("auto_moments/{sessionId}") {
+        fun createRoute(sessionId: String) = "auto_moments/$sessionId"
+    }
+    
+    // Processing
+    data object Processing : Screen("processing/{sessionId}") {
+        fun createRoute(sessionId: String) = "processing/$sessionId"
+    }
+    
+    // Optional page review
+    data object PageReview : Screen("page_review/{sessionId}") {
+        fun createRoute(sessionId: String) = "page_review/$sessionId"
+    }
+    
+    // Single page editor
+    data object SinglePageEditor : Screen("single_page_editor/{sessionId}/{pageId}") {
+        fun createRoute(sessionId: String, pageId: String) = "single_page_editor/$sessionId/$pageId"
+    }
+    
+    // Export setup (reorder, presets, filename)
+    data object ExportSetup : Screen("export_setup/{sessionId}") {
+        fun createRoute(sessionId: String) = "export_setup/$sessionId"
+    }
+    
+    // Export result (success screen)
+    data object ExportResult : Screen("export_result/{sessionId}") {
+        fun createRoute(sessionId: String) = "export_result/$sessionId"
+    }
+    
+    // ===== Settings =====
+    data object Settings : Screen("settings")
+    
+    // ===== Legacy routes (kept for migration) =====
+    
+    @Deprecated("Use AutoMoments instead")
     data object FramePicker : Screen("frame_picker/{projectId}") {
         fun createRoute(projectId: String) = "frame_picker/$projectId"
     }
-    data object Processing : Screen("processing/{projectId}") {
-        fun createRoute(projectId: String) = "processing/$projectId"
-    }
-    data object PageReview : Screen("page_review/{projectId}") {
-        fun createRoute(projectId: String) = "page_review/$projectId"
-    }
-    data object SinglePageEditor : Screen("single_page_editor/{projectId}/{pageId}") {
-        fun createRoute(projectId: String, pageId: String) = "single_page_editor/$projectId/$pageId"
-    }
-    data object Reorder : Screen("reorder/{projectId}") {
-        fun createRoute(projectId: String) = "reorder/$projectId"
-    }
     
-    // Legacy page editor (list-based)
+    @Deprecated("Use ExportSetup instead")
     data object PageEditor : Screen("page_editor/{projectId}") {
         fun createRoute(projectId: String) = "page_editor/$projectId"
     }
     
+    @Deprecated("Use ExportSetup instead")  
     data object Export : Screen("export/{projectId}") {
         fun createRoute(projectId: String) = "export/$projectId"
     }
-    data object Settings : Screen("settings")
+    
+    @Deprecated("Use ExportsLibrary instead")
+    data object Projects : Screen("projects")
+    
+    @Deprecated("Use PageReview with sessionId instead")
+    data object Reorder : Screen("reorder/{projectId}") {
+        fun createRoute(projectId: String) = "reorder/$projectId"
+    }
     
     companion object {
-        const val PROJECT_ID_ARG = "projectId"
+        const val SESSION_ID_ARG = "sessionId"
         const val PAGE_ID_ARG = "pageId"
+        
+        // Legacy arg names
+        @Deprecated("Use SESSION_ID_ARG")
+        const val PROJECT_ID_ARG = "projectId"
     }
 }

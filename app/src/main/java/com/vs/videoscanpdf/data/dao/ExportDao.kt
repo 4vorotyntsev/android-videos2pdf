@@ -30,4 +30,7 @@ interface ExportDao {
     
     @Query("DELETE FROM exports WHERE projectId = :projectId")
     suspend fun deleteAllByProject(projectId: String)
+    
+    @Query("UPDATE exports SET pdfPath = :newPath WHERE id = :exportId")
+    suspend fun updatePath(exportId: String, newPath: String)
 }

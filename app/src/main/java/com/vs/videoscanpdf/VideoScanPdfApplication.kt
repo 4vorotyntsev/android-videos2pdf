@@ -1,6 +1,7 @@
 package com.vs.videoscanpdf
 
 import android.app.Application
+import com.vs.videoscanpdf.data.session.SessionCleanupWorker
 import dagger.hilt.android.HiltAndroidApp
 
 /**
@@ -8,4 +9,12 @@ import dagger.hilt.android.HiltAndroidApp
  * Annotated with @HiltAndroidApp to enable Hilt dependency injection.
  */
 @HiltAndroidApp
-class VideoScanPdfApplication : Application()
+class VideoScanPdfApplication : Application() {
+    
+    override fun onCreate() {
+        super.onCreate()
+        
+        // Schedule cleanup of any leftover session temp files
+        SessionCleanupWorker.schedule(this)
+    }
+}

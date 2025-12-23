@@ -1,14 +1,14 @@
 package com.vs.videoscanpdf.ui.recorder
 
 import android.Manifest
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,17 +31,17 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,29 +49,47 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.vs.videoscanpdf.R
+import com.vs.videoscanpdf.ui.components.PillButton
+import com.vs.videoscanpdf.ui.components.PillButtonVariant
+import com.vs.videoscanpdf.ui.components.SoftCard
+import com.vs.videoscanpdf.ui.theme.AppTextStyles
 import com.vs.videoscanpdf.ui.theme.RecordingRed
+import com.vs.videoscanpdf.ui.theme.Success
+import com.vs.videoscanpdf.ui.theme.Warning
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+/**
+ * Camera recording screen with stability indicator.
+ * 
+ * Features:
+ * - Fullscreen camera preview
+ * - Page frame overlay
+ * - Top hint: "Hold ~1s per page"
+ * - Stability indicator (gyro-based)
+ * - Recording timer
+ * - Flash toggle
+ * - "Looks good?" review sheet after recording
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecorderScreen(
-    projectId: String,
+    sessionId: String,
     onRecordingComplete: () -> Unit,
     onBack: () -> Unit,
     viewModel: RecorderViewModel = hiltViewModel()
@@ -79,205 +97,300 @@ fun RecorderScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
     
-    var hasPermission by remember { mutableStateOf(viewModel.hasCameraPermission()) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
     
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-    }
-    
-    // Initialize ViewModel with project ID
-    LaunchedEffect(projectId) {
-        viewModel.initialize(projectId)
-    }
-    
-    // Request permission if needed
-    LaunchedEffect(Unit) {
-        if (!hasPermission) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
+    // Handle back press - show discard dialog if recording started
+    BackHandler {
+        if (uiState.isRecording || uiState.showReviewButtons) {
+            showDiscardDialog = true
+        } else {
+            onBack()
         }
     }
     
-    // Navigate on recording complete
+    // Initialize
+    LaunchedEffect(sessionId) {
+        viewModel.initialize(sessionId)
+    }
+    
+    // Navigate when complete
     LaunchedEffect(uiState.recordingComplete) {
         if (uiState.recordingComplete) {
             onRecordingComplete()
         }
     }
     
+    // Permission handling
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        // Permission result handled
+    }
+    
     Box(modifier = Modifier.fillMaxSize()) {
-        if (hasPermission) {
-            // Camera preview
+        // Camera preview
+        if (viewModel.hasCameraPermission()) {
             CameraPreview(
                 viewModel = viewModel,
-                lifecycleOwner = lifecycleOwner
+                lifecycleOwner = lifecycleOwner,
+                modifier = Modifier.fillMaxSize()
             )
-            
-            // Page frame overlay (when not showing review buttons)
-            if (!uiState.showReviewButtons) {
-                PageFrameOverlay(
-                    modifier = Modifier.align(Alignment.Center)
-                )
-            }
-            
-            // Top bar (hide when showing review buttons)
-            if (!uiState.showReviewButtons) {
-                TopControls(
-                    onBack = {
-                        if (uiState.isRecording) {
-                            viewModel.stopRecording()
-                        }
-                        onBack()
-                    },
-                    isTorchEnabled = uiState.isTorchEnabled,
-                    onTorchToggle = viewModel::toggleTorch,
-                    isRecording = uiState.isRecording
-                )
-            }
-            
-            // Recording duration
-            if (uiState.isRecording) {
-                RecordingIndicator(
-                    durationMs = uiState.recordingDurationMs,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 80.dp)
-                )
-            }
-            
-            // Show Use/Retake buttons after recording
-            if (uiState.showReviewButtons) {
-                ReviewButtons(
-                    onUseVideo = {
-                        viewModel.useVideo()
-                    },
-                    onRetake = {
-                        viewModel.retake()
-                    },
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-            } else {
-                // Bottom controls
-                BottomControls(
-                    isRecording = uiState.isRecording,
-                    onRecordClick = {
-                        if (uiState.isRecording) {
-                            viewModel.stopRecording()
-                        } else {
-                            viewModel.startRecording()
-                        }
-                    },
-                    zoomLevel = uiState.zoomLevel,
-                    onZoomChange = viewModel::setZoom,
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
-            }
-            
-            // Guidance overlay
-            AnimatedVisibility(
-                visible = uiState.showGuidance && !uiState.isRecording && !uiState.showReviewButtons,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.Center)
-            ) {
-                GuidanceCard(
-                    onDismiss = viewModel::dismissGuidance
-                )
-            }
         } else {
-            // Permission denied state
-            PermissionDeniedContent(
-                onBack = onBack
+            LaunchedEffect(Unit) {
+                permissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+        
+        // Page frame overlay
+        PageFrameOverlay(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(48.dp)
+        )
+        
+        // Top controls and hints
+        TopControls(
+            isRecording = uiState.isRecording,
+            stabilityState = uiState.stabilityState,
+            isTorchEnabled = uiState.isTorchEnabled,
+            onTorchToggle = viewModel::toggleTorch,
+            onBack = { 
+                if (uiState.isRecording || uiState.showReviewButtons) {
+                    showDiscardDialog = true
+                } else {
+                    onBack()
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+        )
+        
+        // Bottom controls
+        BottomControls(
+            isRecording = uiState.isRecording,
+            recordingDurationMs = uiState.recordingDurationMs,
+            zoomLevel = uiState.zoomLevel,
+            onStartRecording = viewModel::startRecording,
+            onStopRecording = viewModel::stopRecording,
+            onZoomChange = viewModel::setZoom,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+        )
+        
+        // Low storage warning
+        if (uiState.hasLowStorage) {
+            LowStorageWarning(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 100.dp)
             )
         }
+    }
+    
+    // Review bottom sheet
+    if (uiState.showReviewButtons) {
+        ReviewBottomSheet(
+            videoPath = uiState.recordedVideoPath,
+            durationMs = uiState.recordingDurationMs,
+            onUseVideo = viewModel::useVideo,
+            onRetake = viewModel::retake
+        )
+    }
+    
+    // Discard confirmation dialog
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Discard recording?") },
+            text = { Text("Your recorded video will be discarded.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardDialog = false
+                        viewModel.retake()
+                        onBack()
+                    }
+                ) {
+                    Text("Discard", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text("Keep recording")
+                }
+            }
+        )
+    }
+    
+    // Error dialog
+    uiState.error?.let { error ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearError() },
+            title = { Text("Error") },
+            text = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearError() }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
 
 @Composable
 private fun CameraPreview(
     viewModel: RecorderViewModel,
-    lifecycleOwner: androidx.lifecycle.LifecycleOwner
+    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     
     AndroidView(
         factory = { ctx ->
-            PreviewView(ctx).also { previewView ->
-                previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                viewModel.setupCamera(
-                    previewView = previewView,
-                    lifecycleOwner = lifecycleOwner,
-                    executor = ContextCompat.getMainExecutor(ctx)
-                )
+            PreviewView(ctx).apply {
+                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
             }
         },
-        modifier = Modifier.fillMaxSize()
+        modifier = modifier,
+        update = { previewView ->
+            viewModel.setupCamera(
+                previewView = previewView,
+                lifecycleOwner = lifecycleOwner,
+                executor = ContextCompat.getMainExecutor(context)
+            )
+        }
+    )
+}
+
+@Composable
+private fun PageFrameOverlay(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .border(
+                width = 2.dp,
+                color = Color.White.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(8.dp)
+            )
     )
 }
 
 @Composable
 private fun TopControls(
-    onBack: () -> Unit,
+    isRecording: Boolean,
+    stabilityState: StabilityState,
     isTorchEnabled: Boolean,
     onTorchToggle: () -> Unit,
-    isRecording: Boolean
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.3f))
-            .padding(horizontal = 8.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                imageVector = Icons.Default.ArrowBack,
-                contentDescription = "Back",
-                tint = Color.White
-            )
-        }
-        
-        if (!isRecording) {
-            IconButton(onClick = onTorchToggle) {
+    Column(modifier = modifier) {
+        // Top bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.Black.copy(alpha = 0.3f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White
+                )
+            }
+            
+            // Hint chip
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Hold ~1s per page",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White
+                )
+            }
+            
+            IconButton(
+                onClick = onTorchToggle,
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.Black.copy(alpha = 0.3f), CircleShape)
+            ) {
                 Icon(
                     imageVector = if (isTorchEnabled) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                    contentDescription = "Toggle flash",
+                    contentDescription = "Flash",
                     tint = if (isTorchEnabled) Color.Yellow else Color.White
                 )
             }
-        } else {
-            Spacer(modifier = Modifier.size(48.dp))
+        }
+        
+        // Stability indicator (only when recording)
+        if (isRecording) {
+            StabilityIndicator(
+                state = stabilityState,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
         }
     }
 }
 
 @Composable
-private fun RecordingIndicator(
-    durationMs: Long,
+private fun StabilityIndicator(
+    state: StabilityState,
     modifier: Modifier = Modifier
 ) {
+    val backgroundColor by animateColorAsState(
+        targetValue = when (state) {
+            StabilityState.STABLE -> Success.copy(alpha = 0.8f)
+            StabilityState.SLIGHTLY_SHAKY -> Warning.copy(alpha = 0.8f)
+            StabilityState.TOO_SHAKY -> RecordingRed.copy(alpha = 0.8f)
+        },
+        label = "stability_bg"
+    )
+    
+    val icon = when (state) {
+        StabilityState.STABLE -> Icons.Default.Check
+        StabilityState.SLIGHTLY_SHAKY -> Icons.Default.Warning
+        StabilityState.TOO_SHAKY -> Icons.Default.Warning
+    }
+    
+    val text = when (state) {
+        StabilityState.STABLE -> "Stable"
+        StabilityState.SLIGHTLY_SHAKY -> "Slightly shaky"
+        StabilityState.TOO_SHAKY -> "Too shaky"
+    }
+    
     Row(
         modifier = modifier
-            .background(
-                color = Color.Black.copy(alpha = 0.6f),
-                shape = RoundedCornerShape(20.dp)
-            )
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .clip(RoundedCornerShape(20.dp))
+            .background(backgroundColor)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .background(RecordingRed, CircleShape)
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = Color.White
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
         Text(
-            text = formatDuration(durationMs),
-            color = Color.White,
-            fontWeight = FontWeight.Bold
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White
         )
     }
 }
@@ -285,311 +398,218 @@ private fun RecordingIndicator(
 @Composable
 private fun BottomControls(
     isRecording: Boolean,
-    onRecordClick: () -> Unit,
+    recordingDurationMs: Long,
     zoomLevel: Float,
+    onStartRecording: () -> Unit,
+    onStopRecording: () -> Unit,
     onZoomChange: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.3f))
+            .background(Color.Black.copy(alpha = 0.5f))
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Zoom slider
-        if (!isRecording) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 32.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("1x", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                Slider(
-                    value = zoomLevel,
-                    onValueChange = onZoomChange,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                )
-                Text("10x", color = Color.White, style = MaterialTheme.typography.labelSmall)
-            }
+        // Recording duration
+        if (isRecording) {
+            Text(
+                text = formatDuration(recordingDurationMs),
+                style = AppTextStyles.timer,
+                color = RecordingRed,
+                fontWeight = FontWeight.Bold
+            )
             Spacer(modifier = Modifier.height(16.dp))
         }
         
-        // Record button
-        IconButton(
-            onClick = onRecordClick,
-            modifier = Modifier
-                .size(80.dp)
-                .clip(CircleShape)
-                .background(if (isRecording) RecordingRed else Color.White)
+        // Zoom slider
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Videocam,
-                contentDescription = if (isRecording) "Stop recording" else "Start recording",
-                tint = if (isRecording) Color.White else Color.Black,
-                modifier = Modifier.size(40.dp)
+            Text(text = "1x", color = Color.White, style = MaterialTheme.typography.bodySmall)
+            Slider(
+                value = zoomLevel,
+                onValueChange = onZoomChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
             )
+            Text(text = "10x", color = Color.White, style = MaterialTheme.typography.bodySmall)
         }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = if (isRecording) 
-                stringResource(R.string.tap_to_stop) 
-            else 
-                stringResource(R.string.tap_to_record),
-            color = Color.White,
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
-
-@Composable
-private fun GuidanceCard(onDismiss: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .padding(32.dp)
-            .fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black.copy(alpha = 0.8f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(R.string.guidance_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Dismiss",
-                        tint = Color.White
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = stringResource(R.string.guidance_text),
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.9f)
-            )
-        }
-    }
-}
-
-@Composable
-private fun PermissionDeniedContent(onBack: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = stringResource(R.string.camera_permission_denied),
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        androidx.compose.material3.Button(onClick = onBack) {
-            Text("Go Back")
-        }
-    }
-}
-
-@Composable
-private fun PageFrameOverlay(
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth(0.85f)
-            .aspectRatio(3f / 4f)
-            .border(
-                width = 2.dp,
-                color = Color.White.copy(alpha = 0.6f),
-                shape = RoundedCornerShape(8.dp)
-            )
-    ) {
-        // Corner indicators
-        val cornerSize = 24.dp
-        val cornerColor = Color.White.copy(alpha = 0.8f)
-        
-        // Top-left corner
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(2.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(cornerSize)
-                    .height(3.dp)
-                    .background(cornerColor)
-            )
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height(cornerSize)
-                    .background(cornerColor)
-            )
-        }
-        
-        // Top-right corner
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(2.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(cornerSize)
-                    .height(3.dp)
-                    .align(Alignment.TopEnd)
-                    .background(cornerColor)
-            )
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height(cornerSize)
-                    .align(Alignment.TopEnd)
-                    .background(cornerColor)
-            )
-        }
-        
-        // Bottom-left corner
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(2.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(cornerSize)
-                    .height(3.dp)
-                    .align(Alignment.BottomStart)
-                    .background(cornerColor)
-            )
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height(cornerSize)
-                    .align(Alignment.BottomStart)
-                    .background(cornerColor)
-            )
-        }
-        
-        // Bottom-right corner
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(2.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(cornerSize)
-                    .height(3.dp)
-                    .align(Alignment.BottomEnd)
-                    .background(cornerColor)
-            )
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height(cornerSize)
-                    .align(Alignment.BottomEnd)
-                    .background(cornerColor)
-            )
-        }
-    }
-}
-
-@Composable
-private fun ReviewButtons(
-    onUseVideo: () -> Unit,
-    onRetake: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.7f))
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "Recording complete",
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
-            fontWeight = FontWeight.Bold
-        )
         
         Spacer(modifier = Modifier.height(24.dp))
         
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Retake button
-            Button(
-                onClick = onRetake,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White.copy(alpha = 0.2f)
+        // Record button
+        RecordButton(
+            isRecording = isRecording,
+            onToggle = {
+                if (isRecording) onStopRecording() else onStartRecording()
+            }
+        )
+    }
+}
+
+@Composable
+private fun RecordButton(
+    isRecording: Boolean,
+    onToggle: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(80.dp)
+            .clip(CircleShape)
+            .border(4.dp, Color.White, CircleShape)
+            .padding(8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(if (isRecording) 32.dp else 64.dp)
+                .clip(if (isRecording) RoundedCornerShape(8.dp) else CircleShape)
+                .background(RecordingRed)
+                .then(
+                    Modifier.size(if (isRecording) 32.dp else 64.dp)
                 ),
-                shape = RoundedCornerShape(12.dp)
+            contentAlignment = Alignment.Center
+        ) {
+            IconButton(
+                onClick = onToggle,
+                modifier = Modifier.fillMaxSize()
             ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = null,
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Retake",
-                    color = Color.White,
-                    fontWeight = FontWeight.Medium
-                )
+                // Empty - the colored background IS the button
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReviewBottomSheet(
+    videoPath: String?,
+    durationMs: Long,
+    onUseVideo: () -> Unit,
+    onRetake: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    
+    // Get video thumbnail
+    var thumbnail by remember { mutableStateOf<Bitmap?>(null) }
+    
+    LaunchedEffect(videoPath) {
+        videoPath?.let { path ->
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(path)
+                thumbnail = retriever.getFrameAtTime(0)
+                retriever.release()
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
+    
+    ModalBottomSheet(
+        onDismissRequest = { /* Prevent dismiss */ },
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Looks good?",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Video thumbnail
+            SoftCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f),
+                cornerRadius = 16.dp,
+                contentPadding = 0.dp
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    thumbnail?.let { bmp ->
+                        androidx.compose.foundation.Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = "Video preview",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    }
+                    
+                    // Duration overlay
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.Black.copy(alpha = 0.7f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = formatDuration(durationMs),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White
+                        )
+                    }
+                }
             }
             
-            // Use video button
-            Button(
-                onClick = onUseVideo,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White
-                ),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = Color.Black
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Use Video",
-                    color = Color.Black,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            PillButton(
+                text = "Use video",
+                onClick = onUseVideo
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            PillButton(
+                text = "Retake",
+                onClick = onRetake,
+                variant = PillButtonVariant.TEXT,
+                icon = Icons.Default.Refresh
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun LowStorageWarning(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.errorContainer)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Low storage space",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
         }
     }
 }
@@ -597,5 +617,5 @@ private fun ReviewButtons(
 private fun formatDuration(durationMs: Long): String {
     val minutes = TimeUnit.MILLISECONDS.toMinutes(durationMs)
     val seconds = TimeUnit.MILLISECONDS.toSeconds(durationMs) % 60
-    return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
+    return String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
 }

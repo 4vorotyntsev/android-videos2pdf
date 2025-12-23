@@ -1,41 +1,53 @@
 package com.vs.videoscanpdf.ui.home
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vs.videoscanpdf.data.entities.ExportEntity
 import com.vs.videoscanpdf.data.repository.ProjectRepository
+import com.vs.videoscanpdf.data.session.SessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import javax.inject.Inject
 
 /**
  * ViewModel for the Home screen.
+ * 
+ * Manages:
+ * - Recent exports display (limited to 3)
+ * - Session creation for new scans
+ * - Permission state checking
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    private val projectRepository: ProjectRepository
+    @ApplicationContext private val context: Context,
+    private val projectRepository: ProjectRepository,
+    private val sessionManager: SessionManager
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     
     init {
-        loadExports()
-        loadRecentProjects()
+        loadRecentExports()
+        checkPermissions()
     }
     
-    private fun loadExports() {
+    private fun loadRecentExports() {
         viewModelScope.launch {
             try {
+                _uiState.value = _uiState.value.copy(isLoading = true)
                 projectRepository.getAllExports().collect { exports ->
                     _uiState.value = _uiState.value.copy(
-                        exports = exports,
+                        recentExports = exports.take(3), // Limit to 3 as per spec
                         isLoading = false
                     )
                 }
@@ -48,40 +60,97 @@ class HomeViewModel @Inject constructor(
         }
     }
     
-    private fun loadRecentProjects() {
-        viewModelScope.launch {
-            try {
-                projectRepository.getAllProjects().collect { projects ->
-                    _uiState.value = _uiState.value.copy(
-                        recentProjects = projects.take(5),
-                        isLoading = false
-                    )
-                }
-            } catch (e: Exception) {
-                // Silently handle - exports are primary
-            }
+    private fun checkPermissions() {
+        val hasCameraPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        
+        val hasMediaPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.READ_MEDIA_VIDEO
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+        
+        _uiState.value = _uiState.value.copy(
+            hasCameraPermission = hasCameraPermission,
+            hasMediaPermission = hasMediaPermission
+        )
+    }
+    
+    /**
+     * Refresh permission state after permission request.
+     */
+    fun refreshPermissions() {
+        checkPermissions()
+    }
+    
+    /**
+     * Start a new scanning session.
+     * Returns the session ID.
+     */
+    fun startNewSession(): String {
+        val session = sessionManager.startSession()
+        return session.id
+    }
+    
+    /**
+     * Check if camera permission is granted.
+     */
+    fun hasCameraPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            context, Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+    
+    /**
+     * Check if media permission is granted.
+     */
+    fun hasMediaPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.READ_MEDIA_VIDEO
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
         }
     }
     
     /**
-     * Creates a new project for recording.
-     * Returns the project ID.
+     * Show permission sheet for camera.
      */
-    suspend fun createNewProject(): String {
-        val title = generateProjectTitle()
-        val project = projectRepository.createProject(title)
-        return project.id
+    fun showCameraPermissionSheet() {
+        _uiState.value = _uiState.value.copy(showCameraPermissionSheet = true)
     }
     
-    private fun generateProjectTitle(): String {
-        val dateFormat = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-        return "Scan ${dateFormat.format(Date())}"
+    /**
+     * Show permission sheet for media.
+     */
+    fun showMediaPermissionSheet() {
+        _uiState.value = _uiState.value.copy(showMediaPermissionSheet = true)
     }
-
+    
+    /**
+     * Dismiss permission sheets.
+     */
+    fun dismissPermissionSheet() {
+        _uiState.value = _uiState.value.copy(
+            showCameraPermissionSheet = false,
+            showMediaPermissionSheet = false
+        )
+    }
+    
+    /**
+     * Delete an export.
+     */
     fun deleteExport(export: ExportEntity) {
         viewModelScope.launch {
             projectRepository.deleteExport(export.id, export.pdfPath)
         }
     }
 }
-

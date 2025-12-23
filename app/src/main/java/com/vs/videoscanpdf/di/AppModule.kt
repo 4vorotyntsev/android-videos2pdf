@@ -1,8 +1,13 @@
 package com.vs.videoscanpdf.di
 
+import android.content.Context
+import com.vs.videoscanpdf.data.session.SessionManager
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import javax.inject.Singleton
 
 /**
  * Hilt module providing application-level dependencies.
@@ -10,6 +15,12 @@ import dagger.hilt.components.SingletonComponent
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
-    // Additional app-level dependencies will be added here
-    // Services like CameraService, FrameExtractor, PdfGenerator, etc.
+    
+    @Provides
+    @Singleton
+    fun provideSessionManager(
+        @ApplicationContext context: Context
+    ): SessionManager {
+        return SessionManager(context)
+    }
 }

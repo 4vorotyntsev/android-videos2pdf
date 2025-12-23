@@ -2,10 +2,10 @@ package com.vs.videoscanpdf.ui.navigation
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Help
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.Icon
@@ -19,17 +19,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.vs.videoscanpdf.ui.exports.ExportsLibraryScreen
 import com.vs.videoscanpdf.ui.help.HelpScreen
 import com.vs.videoscanpdf.ui.home.HomeScreen
-import com.vs.videoscanpdf.ui.projects.ProjectsScreen
 
 /**
- * Bottom navigation destinations
+ * Bottom navigation destinations.
+ * 
+ * Updated to: Home | Exports | Help
+ * (Removed Projects tab, added Exports Library)
  */
 enum class BottomNavItem(
     val route: String,
@@ -43,11 +45,11 @@ enum class BottomNavItem(
         selectedIcon = Icons.Filled.Home,
         unselectedIcon = Icons.Outlined.Home
     ),
-    PROJECTS(
-        route = "tab_projects",
-        label = "Projects",
-        selectedIcon = Icons.Filled.Folder,
-        unselectedIcon = Icons.Outlined.Folder
+    EXPORTS(
+        route = "tab_exports",
+        label = "Exports",
+        selectedIcon = Icons.Filled.FolderOpen,
+        unselectedIcon = Icons.Outlined.FolderOpen
     ),
     HELP(
         route = "tab_help",
@@ -59,14 +61,17 @@ enum class BottomNavItem(
 
 /**
  * Main scaffold containing bottom navigation and tab content.
+ * 
+ * This is the main container after splash/onboarding.
+ * Contains three tabs: Home, Exports, Help
  */
 @Composable
 fun MainScaffold(
-    onNavigateToRecorder: (projectId: String) -> Unit,
-    onNavigateToFramePicker: (projectId: String, videoUri: String) -> Unit,
+    onNavigateToRecorder: (sessionId: String) -> Unit,
+    onNavigateToImport: (sessionId: String) -> Unit,
+    onNavigateToTrim: (sessionId: String) -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNavigateToPageReview: (projectId: String) -> Unit,
-    onNavigateToExport: (projectId: String) -> Unit
+    onNavigateToExportResult: (sessionId: String) -> Unit
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -108,28 +113,24 @@ fun MainScaffold(
         ) {
             composable(BottomNavItem.HOME.route) {
                 HomeScreen(
-                    onRecordClick = onNavigateToRecorder,
-                    onImportVideo = onNavigateToFramePicker,
-                    onSettingsClick = onNavigateToSettings
+                    onStartScanning = onNavigateToRecorder,
+                    onImportVideo = onNavigateToImport,
+                    onSettingsClick = onNavigateToSettings,
+                    onExportClick = onNavigateToExportResult
                 )
             }
             
-            composable(BottomNavItem.PROJECTS.route) {
-                ProjectsScreen(
-                    onProjectClick = { projectId ->
-                        onNavigateToPageReview(projectId)
-                    },
-                    onExportClick = { projectId ->
-                        onNavigateToExport(projectId)
-                    }
+            composable(BottomNavItem.EXPORTS.route) {
+                ExportsLibraryScreen(
+                    onExportClick = onNavigateToExportResult
                 )
             }
             
             composable(BottomNavItem.HELP.route) {
-                HelpScreen()
+                HelpScreen(
+                    onSettingsClick = onNavigateToSettings
+                )
             }
         }
     }
 }
-
-

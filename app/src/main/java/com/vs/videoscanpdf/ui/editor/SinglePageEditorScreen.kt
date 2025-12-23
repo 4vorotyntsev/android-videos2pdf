@@ -1,12 +1,10 @@
 package com.vs.videoscanpdf.ui.editor
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,23 +17,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FilterBAndW
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RotateRight
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,38 +41,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.vs.videoscanpdf.data.entities.FilterType
+import com.vs.videoscanpdf.data.session.PageFilter
 
-enum class EditorFilter(val displayName: String, val filterType: FilterType) {
-    ORIGINAL("Original", FilterType.ORIGINAL),
-    GRAYSCALE("B&W", FilterType.GRAYSCALE),
-    ENHANCED("Document", FilterType.ENHANCED)
-}
-
+/**
+ * Single page editor screen.
+ * 
+ * Features:
+ * - Tools: Auto, Crop, Perspective, Rotate, Filter (Document/Original/B&W), Reset
+ * - Full canvas view
+ * - "Done" top-right primary
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SinglePageEditorScreen(
-    projectId: String,
+    sessionId: String,
     pageId: String,
     onSave: () -> Unit,
     onBack: () -> Unit,
@@ -86,8 +71,8 @@ fun SinglePageEditorScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     
-    LaunchedEffect(projectId, pageId) {
-        viewModel.initialize(projectId, pageId)
+    LaunchedEffect(sessionId, pageId) {
+        viewModel.initialize(sessionId, pageId)
     }
     
     Scaffold(
@@ -106,13 +91,11 @@ fun SinglePageEditorScreen(
                             onSave()
                         }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                        Text(
+                            text = "Done",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Save")
                     }
                 }
             )
@@ -123,226 +106,184 @@ fun SinglePageEditorScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            when {
-                uiState.isLoading -> {
-                    Box(
+            // Page preview
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                uiState.previewBitmap?.let { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Page preview",
                         modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-                uiState.error != null -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = uiState.error ?: "Unknown error",
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-                else -> {
-                    // Image preview with zoom and pan
-                    ZoomableImage(
-                        bitmap = uiState.bitmap,
-                        rotation = uiState.rotation.toFloat(),
-                        filter = uiState.currentFilter,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    )
-                    
-                    // Tool strip
-                    ToolStrip(
-                        currentFilter = uiState.currentFilter,
-                        onRotate = viewModel::rotateRight,
-                        onFilterSelect = viewModel::setFilter,
-                        onReset = viewModel::reset
+                        contentScale = ContentScale.Fit
                     )
                 }
             }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Filter presets
+            if (uiState.selectedTool == EditorTool.FILTER) {
+                FilterPresets(
+                    selectedFilter = uiState.selectedFilter,
+                    onSelectFilter = viewModel::applyFilter
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            // Tool strip
+            ToolStrip(
+                selectedTool = uiState.selectedTool,
+                onSelectTool = viewModel::selectTool,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
         }
     }
 }
 
 @Composable
-private fun ZoomableImage(
-    bitmap: Bitmap?,
-    rotation: Float,
-    filter: EditorFilter,
+private fun ToolStrip(
+    selectedTool: EditorTool?,
+    onSelectTool: (EditorTool) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-    
-    Box(
+    LazyRow(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
     ) {
-        bitmap?.let { bmp ->
-            val colorFilter = when (filter) {
-                EditorFilter.GRAYSCALE -> {
-                    // Grayscale matrix using luminance values
-                    val matrix = ColorMatrix(
-                        floatArrayOf(
-                            0.2126f, 0.7152f, 0.0722f, 0f, 0f,
-                            0.2126f, 0.7152f, 0.0722f, 0f, 0f,
-                            0.2126f, 0.7152f, 0.0722f, 0f, 0f,
-                            0f, 0f, 0f, 1f, 0f
-                        )
-                    )
-                    ColorFilter.colorMatrix(matrix)
-                }
-                EditorFilter.ENHANCED -> {
-                    // Enhanced contrast matrix
-                    val matrix = ColorMatrix(
-                        floatArrayOf(
-                            1.2f, 0f, 0f, 0f, 0f,
-                            0f, 1.2f, 0f, 0f, 0f,
-                            0f, 0f, 1.2f, 0f, 0f,
-                            0f, 0f, 0f, 1f, 0f
-                        )
-                    )
-                    ColorFilter.colorMatrix(matrix)
-                }
-                else -> null
-            }
-            
-            Image(
-                bitmap = bmp.asImageBitmap(),
-                contentDescription = "Page image",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                        translationX = offset.x
-                        translationY = offset.y
-                        rotationZ = rotation
-                    }
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(0.5f, 4f)
-                            offset = Offset(
-                                x = (offset.x + pan.x).coerceIn(-500f, 500f),
-                                y = (offset.y + pan.y).coerceIn(-500f, 500f)
-                            )
-                        }
-                    },
-                contentScale = ContentScale.Fit,
-                colorFilter = colorFilter
+        items(EditorTool.entries) { tool ->
+            ToolButton(
+                tool = tool,
+                isSelected = tool == selectedTool,
+                onClick = { onSelectTool(tool) }
             )
-        } ?: CircularProgressIndicator()
-    }
-}
-
-@Composable
-private fun ToolStrip(
-    currentFilter: EditorFilter,
-    onRotate: () -> Unit,
-    onFilterSelect: (EditorFilter) -> Unit,
-    onReset: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            // Main tools row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                ToolButton(
-                    icon = Icons.Default.RotateRight,
-                    label = "Rotate",
-                    onClick = onRotate
-                )
-                
-                ToolButton(
-                    icon = Icons.Default.Refresh,
-                    label = "Reset",
-                    onClick = onReset
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Filters
-            Text(
-                text = "Filters",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                EditorFilter.entries.forEach { filter ->
-                    FilterChip(
-                        selected = currentFilter == filter,
-                        onClick = { onFilterSelect(filter) },
-                        label = { Text(filter.displayName) },
-                        leadingIcon = if (currentFilter == filter) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        } else null
-                    )
-                }
-            }
         }
     }
 }
 
 @Composable
 private fun ToolButton(
-    icon: ImageVector,
-    label: String,
+    tool: EditorTool,
+    isSelected: Boolean,
     onClick: () -> Unit
 ) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
                 .size(48.dp)
+                .clip(CircleShape)
                 .background(
-                    MaterialTheme.colorScheme.primaryContainer,
-                    CircleShape
+                    if (isSelected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.surface
+                )
+                .border(
+                    width = 1.dp,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    shape = CircleShape
                 ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                imageVector = tool.icon,
+                contentDescription = tool.label,
+                tint = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(24.dp)
             )
         }
+        
         Spacer(modifier = Modifier.height(4.dp))
+        
         Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall
+            text = tool.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isSelected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
+@Composable
+private fun FilterPresets(
+    selectedFilter: PageFilter,
+    onSelectFilter: (PageFilter) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        PageFilter.entries.forEach { filter ->
+            FilterPresetButton(
+                filter = filter,
+                isSelected = filter == selectedFilter,
+                onClick = { onSelectFilter(filter) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun FilterPresetButton(
+    filter: PageFilter,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val label = when (filter) {
+        PageFilter.DOCUMENT -> "Document"
+        PageFilter.ORIGINAL -> "Original"
+        PageFilter.BLACK_WHITE -> "B&W"
+    }
+    
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant
+            )
+            .border(
+                width = if (isSelected) 2.dp else 0.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+enum class EditorTool(val label: String, val icon: ImageVector) {
+    AUTO("Auto", Icons.Default.AutoFixHigh),
+    CROP("Crop", Icons.Default.Crop),
+    PERSPECTIVE("Perspective", Icons.Default.Transform),
+    ROTATE("Rotate", Icons.Default.RotateRight),
+    FILTER("Filter", Icons.Default.FilterBAndW),
+    RESET("Reset", Icons.Default.Refresh)
+}

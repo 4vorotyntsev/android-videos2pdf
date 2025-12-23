@@ -124,6 +124,27 @@ class ProjectRepository @Inject constructor(
         exportDao.deleteById(exportId)
     }
     
+    /**
+     * Save a new export record (without project association for session-based flow).
+     */
+    suspend fun saveExport(pdfPath: String, pageCount: Int, fileSize: Long): ExportEntity {
+        val export = ExportEntity(
+            projectId = "", // No project association in new flow
+            pdfPath = pdfPath,
+            pageCount = pageCount,
+            fileSize = fileSize
+        )
+        exportDao.insert(export)
+        return export
+    }
+    
+    /**
+     * Update the path of an existing export (for rename operations).
+     */
+    suspend fun updateExportPath(exportId: String, newPath: String) {
+        exportDao.updatePath(exportId, newPath)
+    }
+    
     // ============== Video Management ==============
     
     suspend fun setVideoPath(projectId: String, videoPath: String, durationMs: Long) {

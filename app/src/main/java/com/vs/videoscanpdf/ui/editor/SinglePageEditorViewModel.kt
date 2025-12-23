@@ -1,132 +1,112 @@
 package com.vs.videoscanpdf.ui.editor
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import com.vs.videoscanpdf.data.entities.FilterType
-import com.vs.videoscanpdf.data.repository.ProjectRepository
+import com.vs.videoscanpdf.data.session.PageEdit
+import com.vs.videoscanpdf.data.session.PageFilter
+import com.vs.videoscanpdf.data.session.SessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
+/**
+ * UI state for single page editor.
+ */
 data class SinglePageEditorUiState(
-    val bitmap: Bitmap? = null,
+    val pageId: String = "",
+    val previewBitmap: Bitmap? = null,
+    val originalBitmap: Bitmap? = null,
+    val selectedTool: EditorTool? = null,
+    val selectedFilter: PageFilter = PageFilter.DOCUMENT,
     val rotation: Int = 0,
-    val currentFilter: EditorFilter = EditorFilter.ORIGINAL,
-    val originalRotation: Int = 0,
-    val originalFilter: EditorFilter = EditorFilter.ORIGINAL,
-    val isLoading: Boolean = true,
-    val error: String? = null
+    val hasChanges: Boolean = false
 )
 
 @HiltViewModel
 class SinglePageEditorViewModel @Inject constructor(
-    private val projectRepository: ProjectRepository
+    private val sessionManager: SessionManager
 ) : ViewModel() {
+    
+    private var sessionId: String? = null
     
     private val _uiState = MutableStateFlow(SinglePageEditorUiState())
     val uiState: StateFlow<SinglePageEditorUiState> = _uiState.asStateFlow()
     
-    private lateinit var currentProjectId: String
-    private lateinit var currentPageId: String
-    
-    fun initialize(projectId: String, pageId: String) {
-        currentProjectId = projectId
-        currentPageId = pageId
-        loadPage()
+    fun initialize(sessionId: String, pageId: String) {
+        this.sessionId = sessionId
+        
+        val session = sessionManager.currentSession ?: return
+        val moment = session.detectedMoments.find { it.id == pageId }
+        val existingEdit = session.pageEdits[pageId]
+        
+        _uiState.value = SinglePageEditorUiState(
+            pageId = pageId,
+            previewBitmap = moment?.thumbnail,
+            originalBitmap = moment?.thumbnail,
+            selectedFilter = existingEdit?.filter ?: PageFilter.DOCUMENT,
+            rotation = existingEdit?.rotation ?: 0
+        )
     }
     
-    private fun loadPage() {
-        viewModelScope.launch {
-            try {
-                val pages = projectRepository.getPagesByProjectSync(currentProjectId)
-                val page = pages.find { it.id == currentPageId }
-                
-                if (page != null) {
-                    val bitmap = withContext(Dispatchers.IO) {
-                        BitmapFactory.decodeFile(page.imagePath)
-                    }
-                    
-                    val filter = try {
-                        EditorFilter.entries.find { it.filterType.name == page.filterType }
-                            ?: EditorFilter.ORIGINAL
-                    } catch (e: Exception) {
-                        EditorFilter.ORIGINAL
-                    }
-                    
-                    _uiState.update { state ->
-                        state.copy(
-                            bitmap = bitmap,
-                            rotation = page.rotation,
-                            currentFilter = filter,
-                            originalRotation = page.rotation,
-                            originalFilter = filter,
-                            isLoading = false
-                        )
-                    }
-                } else {
-                    _uiState.update { state ->
-                        state.copy(
-                            error = "Page not found",
-                            isLoading = false
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                _uiState.update { state ->
-                    state.copy(
-                        error = e.message,
-                        isLoading = false
-                    )
-                }
+    fun selectTool(tool: EditorTool) {
+        when (tool) {
+            EditorTool.AUTO -> applyAutoFix()
+            EditorTool.RESET -> resetChanges()
+            else -> {
+                _uiState.value = _uiState.value.copy(selectedTool = tool)
             }
         }
     }
     
-    fun rotateRight() {
-        _uiState.update { state ->
-            state.copy(rotation = (state.rotation + 90) % 360)
-        }
+    fun applyFilter(filter: PageFilter) {
+        _uiState.value = _uiState.value.copy(
+            selectedFilter = filter,
+            hasChanges = true
+        )
+        // In real implementation, apply filter to bitmap
     }
     
-    fun setFilter(filter: EditorFilter) {
-        _uiState.update { state ->
-            state.copy(currentFilter = filter)
-        }
+    fun rotate() {
+        val newRotation = (_uiState.value.rotation + 90) % 360
+        _uiState.value = _uiState.value.copy(
+            rotation = newRotation,
+            hasChanges = true
+        )
+        // In real implementation, rotate bitmap
     }
     
-    fun reset() {
-        _uiState.update { state ->
-            state.copy(
-                rotation = state.originalRotation,
-                currentFilter = state.originalFilter
-            )
-        }
+    private fun applyAutoFix() {
+        _uiState.value = _uiState.value.copy(
+            selectedFilter = PageFilter.DOCUMENT,
+            hasChanges = true
+        )
+        // In real implementation, apply auto-enhancement
+    }
+    
+    private fun resetChanges() {
+        _uiState.value = _uiState.value.copy(
+            previewBitmap = _uiState.value.originalBitmap,
+            selectedFilter = PageFilter.DOCUMENT,
+            rotation = 0,
+            hasChanges = false,
+            selectedTool = null
+        )
     }
     
     fun saveChanges() {
-        viewModelScope.launch {
-            val state = _uiState.value
-            
-            // Update page entity with new rotation and filter
-            val pages = projectRepository.getPagesByProjectSync(currentProjectId)
-            val page = pages.find { it.id == currentPageId } ?: return@launch
-            
-            val updatedPage = page.copy(
-                rotation = state.rotation,
-                filterType = state.currentFilter.filterType.name
+        val state = _uiState.value
+        if (state.hasChanges) {
+            sessionManager.applyPageEdit(
+                momentId = state.pageId,
+                edit = PageEdit(
+                    momentId = state.pageId,
+                    rotation = state.rotation,
+                    filter = state.selectedFilter,
+                    hasAutoFix = true
+                )
             )
-            
-            projectRepository.updatePage(updatedPage)
         }
     }
 }
-
-

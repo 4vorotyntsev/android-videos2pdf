@@ -8,21 +8,29 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.vs.videoscanpdf.ui.export.ExportScreen
+import com.vs.videoscanpdf.ui.export.ExportResultScreen
+import com.vs.videoscanpdf.ui.export.ExportSetupScreen
 import com.vs.videoscanpdf.ui.home.HomeScreen
-import com.vs.videoscanpdf.ui.editor.PageEditorScreen
-import com.vs.videoscanpdf.ui.picker.FramePickerScreen
+import com.vs.videoscanpdf.ui.videoimport.ImportVideoScreen
+import com.vs.videoscanpdf.ui.moments.AutoMomentsScreen
+import com.vs.videoscanpdf.ui.editor.SinglePageEditorScreen
+import com.vs.videoscanpdf.ui.processing.ProcessingScreen
 import com.vs.videoscanpdf.ui.recorder.RecorderScreen
+import com.vs.videoscanpdf.ui.review.PageReviewScreen
 import com.vs.videoscanpdf.ui.settings.SettingsScreen
 import com.vs.videoscanpdf.ui.splash.SplashScreen
 import com.vs.videoscanpdf.ui.onboarding.OnboardingScreen
-import com.vs.videoscanpdf.ui.processing.ProcessingScreen
-import com.vs.videoscanpdf.ui.review.PageReviewScreen
-import com.vs.videoscanpdf.ui.reorder.ReorderScreen
-import com.vs.videoscanpdf.ui.editor.SinglePageEditorScreen
+import com.vs.videoscanpdf.ui.trim.TrimVideoScreen
 
 /**
  * Main navigation host for the app.
+ * 
+ * Navigation flow:
+ * 1. Splash -> Onboarding (first run) or Main
+ * 2. Main has bottom nav: Home | Exports | Help
+ * 3. Scanning flow: Recorder/Import -> Trim -> AutoMoments -> Processing -> ExportSetup -> ExportResult
+ * 
+ * Mode B behavior: Any back navigation during scanning flow discards the session.
  */
 @Composable
 fun AppNavigation(
@@ -34,6 +42,8 @@ fun AppNavigation(
         startDestination = Screen.Splash.route,
         modifier = modifier
     ) {
+        // ===== Initial Flow =====
+        
         // Splash screen
         composable(Screen.Splash.route) {
             SplashScreen(
@@ -61,129 +71,128 @@ fun AppNavigation(
             )
         }
         
-        // Main scaffold with bottom navigation
+        // ===== Main Scaffold with Bottom Navigation =====
+        
         composable(Screen.Main.route) {
             MainScaffold(
-                onNavigateToRecorder = { projectId ->
-                    navController.navigate(Screen.Recorder.createRoute(projectId))
+                onNavigateToRecorder = { sessionId ->
+                    navController.navigate(Screen.Recorder.createRoute(sessionId))
                 },
-                onNavigateToFramePicker = { projectId, videoUri ->
-                    val encodedUri = java.net.URLEncoder.encode(videoUri, "UTF-8")
-                    navController.navigate(Screen.FramePicker.createRoute(projectId) + "?videoUri=$encodedUri")
+                onNavigateToImport = { sessionId ->
+                    navController.navigate(Screen.ImportVideo.createRoute(sessionId))
+                },
+                onNavigateToTrim = { sessionId ->
+                    navController.navigate(Screen.TrimVideo.createRoute(sessionId))
                 },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
                 },
-                onNavigateToPageReview = { projectId ->
-                    navController.navigate(Screen.PageReview.createRoute(projectId))
-                },
-                onNavigateToExport = { projectId ->
-                    navController.navigate(Screen.Export.createRoute(projectId))
+                onNavigateToExportResult = { sessionId ->
+                    navController.navigate(Screen.ExportResult.createRoute(sessionId))
                 }
             )
         }
         
-        // Home screen (legacy route for direct access)
-        composable(Screen.Home.route) {
-            HomeScreen(
-                onRecordClick = { projectId ->
-                    navController.navigate(Screen.Recorder.createRoute(projectId))
-                },
-                onImportVideo = { projectId, videoUri ->
-                    // Navigate to FramePicker with the imported video
-                    // The video URI needs to be encoded for navigation
-                    val encodedUri = java.net.URLEncoder.encode(videoUri, "UTF-8")
-                    navController.navigate(Screen.FramePicker.createRoute(projectId) + "?videoUri=$encodedUri")
-                },
-                onSettingsClick = {
-                    navController.navigate(Screen.Settings.route)
-                }
-            )
-        }
+        // ===== Scanning Flow =====
         
         // Recorder screen
         composable(
             route = Screen.Recorder.route,
             arguments = listOf(
-                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType }
+                navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val projectId = backStackEntry.arguments?.getString(Screen.PROJECT_ID_ARG) ?: return@composable
+            val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
             RecorderScreen(
-                projectId = projectId,
+                sessionId = sessionId,
                 onRecordingComplete = {
-                    navController.navigate(Screen.FramePicker.createRoute(projectId)) {
+                    // After recording, go to trim
+                    navController.navigate(Screen.TrimVideo.createRoute(sessionId)) {
                         popUpTo(Screen.Recorder.route) { inclusive = true }
                     }
                 },
-                onBack = { navController.popBackStack() }
-            )
-        }
-        
-        // Frame Picker screen
-        composable(
-            route = Screen.FramePicker.route + "?videoUri={videoUri}",
-            arguments = listOf(
-                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType },
-                navArgument("videoUri") { 
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
+                onBack = { 
+                    // Mode B: discard session on back
+                    navController.popBackStack(Screen.Main.route, inclusive = false)
                 }
             )
-        ) { backStackEntry ->
-            val projectId = backStackEntry.arguments?.getString(Screen.PROJECT_ID_ARG) ?: return@composable
-            val videoUri = backStackEntry.arguments?.getString("videoUri")?.let {
-                java.net.URLDecoder.decode(it, "UTF-8")
-            }
-            FramePickerScreen(
-                projectId = projectId,
-                importedVideoUri = videoUri,
-                onContinue = {
-                    navController.navigate(Screen.PageEditor.createRoute(projectId))
-                },
-                onBack = { navController.popBackStack() }
-            )
         }
         
-        // Page Editor screen
+        // Import video screen
         composable(
-            route = Screen.PageEditor.route,
+            route = Screen.ImportVideo.route,
             arguments = listOf(
-                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType }
+                navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val projectId = backStackEntry.arguments?.getString(Screen.PROJECT_ID_ARG) ?: return@composable
-            PageEditorScreen(
-                projectId = projectId,
-                onExport = {
-                    navController.navigate(Screen.Export.createRoute(projectId))
+            val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
+            ImportVideoScreen(
+                sessionId = sessionId,
+                onVideoSelected = {
+                    // After import validation, go to trim
+                    navController.navigate(Screen.TrimVideo.createRoute(sessionId)) {
+                        popUpTo(Screen.ImportVideo.route) { inclusive = true }
+                    }
                 },
-                onBack = { navController.popBackStack() }
-            )
-        }
-        
-        // Export screen
-        composable(
-            route = Screen.Export.route,
-            arguments = listOf(
-                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val projectId = backStackEntry.arguments?.getString(Screen.PROJECT_ID_ARG) ?: return@composable
-            ExportScreen(
-                projectId = projectId,
-                onExportComplete = {
+                onBack = {
+                    // Mode B: discard session on back
                     navController.popBackStack(Screen.Main.route, inclusive = false)
-                },
-                onBack = { navController.popBackStack() }
+                }
             )
         }
         
-        // Settings screen
-        composable(Screen.Settings.route) {
-            SettingsScreen(
-                onBack = { navController.popBackStack() }
+        // Trim video screen
+        composable(
+            route = Screen.TrimVideo.route,
+            arguments = listOf(
+                navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
+            TrimVideoScreen(
+                sessionId = sessionId,
+                onContinue = {
+                    navController.navigate(Screen.AutoMoments.createRoute(sessionId)) {
+                        popUpTo(Screen.TrimVideo.route) { inclusive = true }
+                    }
+                },
+                onSkip = {
+                    // Skip trim, go directly to auto moments
+                    navController.navigate(Screen.AutoMoments.createRoute(sessionId)) {
+                        popUpTo(Screen.TrimVideo.route) { inclusive = true }
+                    }
+                },
+                onBack = {
+                    // Mode B: discard session on back
+                    navController.popBackStack(Screen.Main.route, inclusive = false)
+                }
+            )
+        }
+        
+        // Auto moments screen (page detection)
+        composable(
+            route = Screen.AutoMoments.route,
+            arguments = listOf(
+                navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
+            AutoMomentsScreen(
+                sessionId = sessionId,
+                onCreatePdf = {
+                    // Go directly to processing
+                    navController.navigate(Screen.Processing.createRoute(sessionId)) {
+                        popUpTo(Screen.AutoMoments.route) { inclusive = true }
+                    }
+                },
+                onReviewPages = {
+                    // Go to optional page review
+                    navController.navigate(Screen.PageReview.createRoute(sessionId))
+                },
+                onBack = {
+                    // Mode B: discard session on back
+                    navController.popBackStack(Screen.Main.route, inclusive = false)
+                }
             )
         }
         
@@ -191,72 +200,113 @@ fun AppNavigation(
         composable(
             route = Screen.Processing.route,
             arguments = listOf(
-                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType }
+                navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val projectId = backStackEntry.arguments?.getString(Screen.PROJECT_ID_ARG) ?: return@composable
+            val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
             ProcessingScreen(
-                projectId = projectId,
+                sessionId = sessionId,
                 onComplete = {
-                    navController.navigate(Screen.Export.createRoute(projectId)) {
+                    navController.navigate(Screen.ExportSetup.createRoute(sessionId)) {
                         popUpTo(Screen.Processing.route) { inclusive = true }
                     }
                 },
-                onCancel = { navController.popBackStack() }
+                onCancel = {
+                    // Mode B: discard session on cancel
+                    navController.popBackStack(Screen.Main.route, inclusive = false)
+                }
             )
         }
         
-        // Page Review screen
+        // Page review screen (optional)
         composable(
             route = Screen.PageReview.route,
             arguments = listOf(
-                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType }
+                navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val projectId = backStackEntry.arguments?.getString(Screen.PROJECT_ID_ARG) ?: return@composable
+            val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
             PageReviewScreen(
-                projectId = projectId,
+                sessionId = sessionId,
                 onContinue = {
-                    navController.navigate(Screen.Reorder.createRoute(projectId))
+                    navController.navigate(Screen.ExportSetup.createRoute(sessionId)) {
+                        popUpTo(Screen.PageReview.route) { inclusive = true }
+                    }
                 },
                 onEditPage = { pageId ->
-                    navController.navigate(Screen.SinglePageEditor.createRoute(projectId, pageId))
+                    navController.navigate(Screen.SinglePageEditor.createRoute(sessionId, pageId))
                 },
-                onBack = { navController.popBackStack() }
+                onBack = {
+                    // Go back to auto moments (not home)
+                    navController.popBackStack()
+                }
             )
         }
         
-        // Reorder screen
-        composable(
-            route = Screen.Reorder.route,
-            arguments = listOf(
-                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val projectId = backStackEntry.arguments?.getString(Screen.PROJECT_ID_ARG) ?: return@composable
-            ReorderScreen(
-                projectId = projectId,
-                onExport = {
-                    navController.navigate(Screen.Processing.createRoute(projectId))
-                },
-                onBack = { navController.popBackStack() }
-            )
-        }
-        
-        // Single Page Editor screen
+        // Single page editor
         composable(
             route = Screen.SinglePageEditor.route,
             arguments = listOf(
-                navArgument(Screen.PROJECT_ID_ARG) { type = NavType.StringType },
+                navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType },
                 navArgument(Screen.PAGE_ID_ARG) { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val projectId = backStackEntry.arguments?.getString(Screen.PROJECT_ID_ARG) ?: return@composable
+            val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
             val pageId = backStackEntry.arguments?.getString(Screen.PAGE_ID_ARG) ?: return@composable
             SinglePageEditorScreen(
-                projectId = projectId,
+                sessionId = sessionId,
                 pageId = pageId,
                 onSave = { navController.popBackStack() },
+                onBack = { navController.popBackStack() }
+            )
+        }
+        
+        // Export setup screen
+        composable(
+            route = Screen.ExportSetup.route,
+            arguments = listOf(
+                navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
+            ExportSetupScreen(
+                sessionId = sessionId,
+                onExportComplete = {
+                    navController.navigate(Screen.ExportResult.createRoute(sessionId)) {
+                        popUpTo(Screen.ExportSetup.route) { inclusive = true }
+                    }
+                },
+                onBack = {
+                    // Go back to auto moments or page review
+                    navController.popBackStack()
+                }
+            )
+        }
+        
+        // Export result screen
+        composable(
+            route = Screen.ExportResult.route,
+            arguments = listOf(
+                navArgument(Screen.SESSION_ID_ARG) { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val sessionId = backStackEntry.arguments?.getString(Screen.SESSION_ID_ARG) ?: return@composable
+            ExportResultScreen(
+                sessionId = sessionId,
+                onCreateAnother = {
+                    // Complete session and go home
+                    navController.popBackStack(Screen.Main.route, inclusive = false)
+                },
+                onDone = {
+                    navController.popBackStack(Screen.Main.route, inclusive = false)
+                }
+            )
+        }
+        
+        // ===== Settings =====
+        
+        composable(Screen.Settings.route) {
+            SettingsScreen(
                 onBack = { navController.popBackStack() }
             )
         }

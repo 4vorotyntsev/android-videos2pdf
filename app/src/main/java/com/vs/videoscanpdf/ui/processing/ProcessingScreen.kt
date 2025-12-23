@@ -1,8 +1,8 @@
 package com.vs.videoscanpdf.ui.processing
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -20,25 +20,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.VideoFile
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,57 +43,59 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.vs.videoscanpdf.data.session.ProcessingStage
+import com.vs.videoscanpdf.ui.components.PillButton
+import com.vs.videoscanpdf.ui.components.PillButtonVariant
+import com.vs.videoscanpdf.ui.components.SoftCard
+import com.vs.videoscanpdf.ui.theme.StageActive
+import com.vs.videoscanpdf.ui.theme.StageComplete
+import com.vs.videoscanpdf.ui.theme.StagePending
 
-enum class ProcessingStep {
-    READING_VIDEO,
-    DETECTING_PAGES,
-    ENHANCING_IMAGES,
-    GENERATING_PDF,
-    COMPLETE
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Processing screen - shows progress while creating PDF.
+ * 
+ * Features:
+ * - Title: "Making your PDF"
+ * - Subtext: "Usually under a minute"
+ * - Friendly step labels (not numbered)
+ * - Live first-page preview ASAP
+ * - "Run in background" option
+ * - Cancel discards everything
+ */
 @Composable
 fun ProcessingScreen(
-    projectId: String,
+    sessionId: String,
     onComplete: () -> Unit,
     onCancel: () -> Unit,
     viewModel: ProcessingViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    
     var showCancelDialog by remember { mutableStateOf(false) }
     
-    LaunchedEffect(projectId) {
-        viewModel.startProcessing(projectId)
+    BackHandler {
+        showCancelDialog = true
     }
     
+    LaunchedEffect(sessionId) {
+        viewModel.initialize(sessionId)
+    }
+    
+    // Navigate when complete
     LaunchedEffect(uiState.isComplete) {
         if (uiState.isComplete) {
             onComplete()
         }
     }
     
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Processing") },
-                actions = {
-                    if (!uiState.isComplete) {
-                        TextButton(onClick = { showCancelDialog = true }) {
-                            Text("Cancel")
-                        }
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
+    Scaffold { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -109,116 +105,77 @@ fun ProcessingScreen(
         ) {
             Spacer(modifier = Modifier.height(32.dp))
             
-            // Live preview
-            AnimatedVisibility(
-                visible = uiState.previewBitmap != null,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(3f / 4f),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    uiState.previewBitmap?.let { bitmap ->
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "Page preview",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-                }
-            }
+            // Title
+            Text(
+                text = "Making your PDF",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
             
-            // Placeholder when no preview
-            if (uiState.previewBitmap == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(3f / 4f)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Preparing...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Subtitle
+            Text(
+                text = "Usually under a minute",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             
             Spacer(modifier = Modifier.height(32.dp))
             
-            // Progress steps
-            ProcessingSteps(
-                currentStep = uiState.currentStep,
-                progress = uiState.progress
+            // Overall progress
+            LinearProgressIndicator(
+                progress = { uiState.overallProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
             )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "${(uiState.overallProgress * 100).toInt()}%",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // Live preview card
+            if (uiState.previewBitmap != null) {
+                PreviewCard(
+                    bitmap = uiState.previewBitmap!!,
+                    pagesProcessed = uiState.pagesProcessed,
+                    totalPages = uiState.totalPages
+                )
+                
+                Spacer(modifier = Modifier.height(32.dp))
+            }
+            
+            // Processing steps
+            ProcessingSteps(currentStage = uiState.currentStage)
             
             Spacer(modifier = Modifier.weight(1f))
             
-            // Overall progress
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+            // Background option
+            PillButton(
+                text = "Run in background",
+                onClick = { viewModel.runInBackground() },
+                variant = PillButtonVariant.SECONDARY
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Cancel
+            TextButton(
+                onClick = { showCancelDialog = true }
             ) {
-                LinearProgressIndicator(
-                    progress = { uiState.overallProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
                 Text(
-                    text = "${(uiState.overallProgress * 100).toInt()}%",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "Cancel",
+                    color = MaterialTheme.colorScheme.error
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                if (uiState.processedPages > 0) {
-                    Text(
-                        text = "${uiState.processedPages} of ${uiState.totalPages} pages processed",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Run in background option
-            if (!uiState.isComplete) {
-                TextButton(
-                    onClick = {
-                        viewModel.runInBackground()
-                        onCancel()
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Run in background")
-                }
             }
         }
     }
@@ -227,17 +184,17 @@ fun ProcessingScreen(
     if (showCancelDialog) {
         AlertDialog(
             onDismissRequest = { showCancelDialog = false },
-            title = { Text("Cancel Processing?") },
-            text = { Text("Are you sure you want to cancel? Progress will be lost.") },
+            title = { Text("Cancel processing?") },
+            text = { Text("Your progress will be lost and all files will be deleted.") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.cancelProcessing()
                         showCancelDialog = false
+                        viewModel.cancelProcessing()
                         onCancel()
                     }
                 ) {
-                    Text("Yes, cancel", color = MaterialTheme.colorScheme.error)
+                    Text("Cancel & Delete", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -250,125 +207,162 @@ fun ProcessingScreen(
 }
 
 @Composable
-private fun ProcessingSteps(
-    currentStep: ProcessingStep,
-    progress: Float
+private fun PreviewCard(
+    bitmap: Bitmap,
+    pagesProcessed: Int,
+    totalPages: Int
 ) {
-    Column(
+    SoftCard(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        cornerRadius = 20.dp
     ) {
-        ProcessingStepItem(
-            icon = Icons.Default.VideoFile,
-            title = "Reading video",
-            isActive = currentStep == ProcessingStep.READING_VIDEO,
-            isComplete = currentStep.ordinal > ProcessingStep.READING_VIDEO.ordinal,
-            progress = if (currentStep == ProcessingStep.READING_VIDEO) progress else if (currentStep.ordinal > ProcessingStep.READING_VIDEO.ordinal) 1f else 0f
-        )
-        
-        ProcessingStepItem(
-            icon = Icons.Default.Description,
-            title = "Detecting pages",
-            isActive = currentStep == ProcessingStep.DETECTING_PAGES,
-            isComplete = currentStep.ordinal > ProcessingStep.DETECTING_PAGES.ordinal,
-            progress = if (currentStep == ProcessingStep.DETECTING_PAGES) progress else if (currentStep.ordinal > ProcessingStep.DETECTING_PAGES.ordinal) 1f else 0f
-        )
-        
-        ProcessingStepItem(
-            icon = Icons.Default.AutoAwesome,
-            title = "Enhancing images",
-            isActive = currentStep == ProcessingStep.ENHANCING_IMAGES,
-            isComplete = currentStep.ordinal > ProcessingStep.ENHANCING_IMAGES.ordinal,
-            progress = if (currentStep == ProcessingStep.ENHANCING_IMAGES) progress else if (currentStep.ordinal > ProcessingStep.ENHANCING_IMAGES.ordinal) 1f else 0f
-        )
-        
-        ProcessingStepItem(
-            icon = Icons.Default.Image,
-            title = "Generating PDF",
-            isActive = currentStep == ProcessingStep.GENERATING_PDF,
-            isComplete = currentStep == ProcessingStep.COMPLETE,
-            progress = if (currentStep == ProcessingStep.GENERATING_PDF) progress else if (currentStep == ProcessingStep.COMPLETE) 1f else 0f
-        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Preview image
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(3f / 4f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "Preview",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Progress text
+            Text(
+                text = "Processing page $pagesProcessed of $totalPages",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
 @Composable
-private fun ProcessingStepItem(
-    icon: ImageVector,
-    title: String,
-    isActive: Boolean,
-    isComplete: Boolean,
-    progress: Float
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+private fun ProcessingSteps(currentStage: ProcessingStage) {
+    val steps = listOf(
+        StepInfo(
+            stage = ProcessingStage.READING_VIDEO,
+            label = "Reading video",
+            icon = Icons.Default.Movie
+        ),
+        StepInfo(
+            stage = ProcessingStage.DETECTING_PAGES,
+            label = "Finding pages",
+            icon = Icons.Default.Description
+        ),
+        StepInfo(
+            stage = ProcessingStage.ENHANCING_IMAGES,
+            label = "Making readable",
+            icon = Icons.Default.Image
+        ),
+        StepInfo(
+            stage = ProcessingStage.GENERATING_PDF,
+            label = "Creating PDF",
+            icon = Icons.Default.PictureAsPdf
+        )
+    )
+    
+    Column(
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Status icon
+        steps.forEach { step ->
+            ProcessingStepItem(
+                label = step.label,
+                icon = step.icon,
+                state = when {
+                    step.stage.ordinal < currentStage.ordinal -> StepState.COMPLETE
+                    step.stage.ordinal == currentStage.ordinal -> StepState.ACTIVE
+                    else -> StepState.PENDING
+                }
+            )
+        }
+    }
+}
+
+private data class StepInfo(
+    val stage: ProcessingStage,
+    val label: String,
+    val icon: ImageVector
+)
+
+private enum class StepState {
+    PENDING, ACTIVE, COMPLETE
+}
+
+@Composable
+private fun ProcessingStepItem(
+    label: String,
+    icon: ImageVector,
+    state: StepState
+) {
+    val backgroundColor by animateColorAsState(
+        targetValue = when (state) {
+            StepState.COMPLETE -> StageComplete
+            StepState.ACTIVE -> StageActive
+            StepState.PENDING -> StagePending
+        },
+        label = "step_bg"
+    )
+    
+    val textColor = when (state) {
+        StepState.COMPLETE -> MaterialTheme.colorScheme.onSurface
+        StepState.ACTIVE -> MaterialTheme.colorScheme.primary
+        StepState.PENDING -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    }
+    
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        // Step indicator
         Box(
             modifier = Modifier
-                .size(40.dp)
-                .background(
-                    when {
-                        isComplete -> MaterialTheme.colorScheme.primary
-                        isActive -> MaterialTheme.colorScheme.primaryContainer
-                        else -> MaterialTheme.colorScheme.surfaceVariant
-                    },
-                    CircleShape
-                ),
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(backgroundColor),
             contentAlignment = Alignment.Center
         ) {
-            if (isComplete) {
+            if (state == StepState.COMPLETE) {
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
+                    tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
-            } else if (isActive) {
+            } else if (state == StepState.ACTIVE) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.primary
+                    color = Color.White
                 )
             } else {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
         
         Spacer(modifier = Modifier.width(16.dp))
         
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                color = when {
-                    isComplete -> MaterialTheme.colorScheme.primary
-                    isActive -> MaterialTheme.colorScheme.onSurface
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
-            
-            if (isActive && progress > 0f) {
-                Spacer(modifier = Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                )
-            }
-        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = textColor,
+            fontWeight = if (state == StepState.ACTIVE) FontWeight.Medium else FontWeight.Normal
+        )
     }
 }
-
-

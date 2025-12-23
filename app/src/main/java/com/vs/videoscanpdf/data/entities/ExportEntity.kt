@@ -29,5 +29,6 @@ data class ExportEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val pdfPath: String,
     val pageCount: Int,
-    val settingsJson: String // JSON object with page size, quality, etc.
+    val fileSize: Long = 0L,
+    val settingsJson: String = "{}" // JSON object with page size, quality, etc.
 )

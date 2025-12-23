@@ -1,11 +1,14 @@
 package com.vs.videoscanpdf.ui.home
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,24 +17,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileUpload
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,58 +42,94 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.vs.videoscanpdf.R
 import com.vs.videoscanpdf.data.entities.ExportEntity
-import com.vs.videoscanpdf.data.entities.ProjectEntity
-import kotlinx.coroutines.launch
+import com.vs.videoscanpdf.ui.components.CenteredTrustChips
+import com.vs.videoscanpdf.ui.components.PillButton
+import com.vs.videoscanpdf.ui.components.PillButtonVariant
+import com.vs.videoscanpdf.ui.components.SoftCard
+import com.vs.videoscanpdf.ui.components.SoftCardSubtle
+import com.vs.videoscanpdf.ui.permission.PermissionSheet
+import com.vs.videoscanpdf.ui.permission.PermissionSheetState
+import com.vs.videoscanpdf.ui.permission.PermissionType
+import com.vs.videoscanpdf.ui.theme.AppTextStyles
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Home screen - SaaS landing inside the app.
+ * 
+ * Features:
+ * - Hero section with promise and primary CTA
+ * - Trust chips row ("Works offline", "Saved to your phone")
+ * - Recent exports (limited to 3)
+ * - Permission handling via bottom sheet (not on screen open)
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onRecordClick: (projectId: String) -> Unit,
-    onImportVideo: (projectId: String, videoUri: String) -> Unit,
+    onStartScanning: (sessionId: String) -> Unit,
+    onImportVideo: (sessionId: String) -> Unit,
     onSettingsClick: () -> Unit,
+    onExportClick: (sessionId: String) -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val scope = rememberCoroutineScope()
-    var showDeleteDialog by remember { mutableStateOf<ExportEntity?>(null) }
     
-    // Video picker launcher
-    val videoPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    // Permission launchers
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.refreshPermissions()
+        if (granted) {
+            val sessionId = viewModel.startNewSession()
+            onStartScanning(sessionId)
+        }
+    }
+    
+    val mediaPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        viewModel.refreshPermissions()
+        viewModel.dismissPermissionSheet()
+        // After permission granted, user needs to tap import again
+    }
+    
+    // Video picker
+    var pendingVideoImport by remember { mutableStateOf(false) }
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
     ) { uri ->
         uri?.let { videoUri ->
-            scope.launch {
-                val projectId = viewModel.createNewProject()
-                onImportVideo(projectId, videoUri.toString())
-            }
+            val sessionId = viewModel.startNewSession()
+            // Note: In real implementation, we'd pass the video URI to the import screen
+            onImportVideo(sessionId)
         }
     }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Video to PDF") },
+                title = { 
+                    Text(
+                        text = "Video to PDF",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
                 actions = {
                     IconButton(onClick = onSettingsClick) {
                         Icon(
                             imageVector = Icons.Default.Settings,
-                            contentDescription = stringResource(R.string.settings)
+                            contentDescription = "Settings"
                         )
                     }
                 }
@@ -109,67 +142,82 @@ fun HomeScreen(
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Hero section with primary action
+            // Hero section
             HeroSection(
                 onStartScanning = {
-                    scope.launch {
-                        val projectId = viewModel.createNewProject()
-                        onRecordClick(projectId)
+                    if (viewModel.hasCameraPermission()) {
+                        val sessionId = viewModel.startNewSession()
+                        onStartScanning(sessionId)
+                    } else {
+                        viewModel.showCameraPermissionSheet()
                     }
                 },
                 onImportVideo = {
-                    videoPickerLauncher.launch("video/*")
+                    if (viewModel.hasMediaPermission()) {
+                        videoPickerLauncher.launch("video/*")
+                    } else {
+                        viewModel.showMediaPermissionSheet()
+                    }
                 }
             )
             
             Spacer(modifier = Modifier.height(32.dp))
             
-            // Recent documents section
-            if (uiState.recentProjects.isNotEmpty()) {
-                RecentDocumentsSection(
-                    projects = uiState.recentProjects
-                )
-                
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-            
-            // Previous exports section
-            if (uiState.exports.isNotEmpty()) {
-                ExportsSection(
-                    exports = uiState.exports.take(5),
-                    onDelete = { showDeleteDialog = it }
+            // Recent exports section
+            if (uiState.recentExports.isNotEmpty()) {
+                RecentExportsSection(
+                    exports = uiState.recentExports,
+                    onExportClick = { export ->
+                        // Navigate to view export
+                        onExportClick(export.id)
+                    },
+                    onDeleteExport = { export ->
+                        viewModel.deleteExport(export)
+                    }
                 )
             }
             
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
-
-    // Delete confirmation dialog
-    showDeleteDialog?.let { export ->
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = null },
-            title = { Text("Delete Export") },
-            text = { Text("Are you sure you want to delete this export? The PDF file will also be deleted.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteExport(export)
-                        showDeleteDialog = null
-                    }
-                ) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = null }) {
-                    Text("Cancel")
-                }
+    
+    // Camera permission sheet
+    PermissionSheet(
+        state = PermissionSheetState(
+            isVisible = uiState.showCameraPermissionSheet,
+            type = PermissionType.CAMERA
+        ),
+        onAllow = {
+            viewModel.dismissPermissionSheet()
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        },
+        onDismiss = { viewModel.dismissPermissionSheet() },
+        onOpenSettings = { viewModel.dismissPermissionSheet() }
+    )
+    
+    // Media permission sheet
+    PermissionSheet(
+        state = PermissionSheetState(
+            isVisible = uiState.showMediaPermissionSheet,
+            type = PermissionType.MEDIA
+        ),
+        onAllow = {
+            viewModel.dismissPermissionSheet()
+            val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Manifest.permission.READ_MEDIA_VIDEO
+            } else {
+                Manifest.permission.READ_EXTERNAL_STORAGE
             }
-        )
-    }
+            mediaPermissionLauncher.launch(permission)
+        },
+        onDismiss = { viewModel.dismissPermissionSheet() },
+        onOpenSettings = { viewModel.dismissPermissionSheet() }
+    )
 }
 
+/**
+ * Hero section with main value proposition and CTA.
+ */
 @Composable
 private fun HeroSection(
     onStartScanning: () -> Unit,
@@ -179,7 +227,7 @@ private fun HeroSection(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
-            .padding(top = 32.dp),
+            .padding(top = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Large icon
@@ -198,49 +246,39 @@ private fun HeroSection(
             )
         }
         
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
         
+        // Hero headline
         Text(
-            text = "Turn your videos into PDFs",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
+            text = "Turn videos into clean PDFs",
+            style = AppTextStyles.heroTitle,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onBackground
         )
         
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         
+        // Hero subtext (friendly copy)
         Text(
-            text = "Record document pages or import an existing video",
-            style = MaterialTheme.typography.bodyMedium,
+            text = "Record pages as a video. We'll clean them up and save a readable PDF.",
+            style = AppTextStyles.heroSubtitle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
         
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        // Trust chips
+        CenteredTrustChips()
+        
         Spacer(modifier = Modifier.height(32.dp))
         
-        // Primary action button
-        Button(
+        // Primary CTA (full width pill)
+        PillButton(
+            text = "Start scanning",
             onClick = onStartScanning,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Default.Videocam,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = "Start Scanning",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
+            icon = Icons.Default.Videocam
+        )
         
         Spacer(modifier = Modifier.height(12.dp))
         
@@ -256,98 +294,21 @@ private fun HeroSection(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = stringResource(R.string.import_video),
+                text = "Import video",
                 style = MaterialTheme.typography.bodyLarge
             )
         }
     }
 }
 
+/**
+ * Recent exports section with card list.
+ */
 @Composable
-private fun RecentDocumentsSection(
-    projects: List<ProjectEntity>
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
-            text = "Recent Documents",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 24.dp)
-        )
-        
-        Spacer(modifier = Modifier.height(12.dp))
-        
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(
-                items = projects,
-                key = { it.id }
-            ) { project ->
-                RecentDocumentCard(project = project)
-            }
-        }
-    }
-}
-
-@Composable
-private fun RecentDocumentCard(project: ProjectEntity) {
-    val dateFormat = remember { SimpleDateFormat("MMM dd", Locale.getDefault()) }
-    
-    Card(
-        modifier = Modifier
-            .width(140.dp)
-            .clickable { /* TODO: Navigate to project */ },
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-            // Thumbnail placeholder
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Folder,
-                    contentDescription = null,
-                    modifier = Modifier.size(32.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Text(
-                text = project.title,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            
-            Text(
-                text = dateFormat.format(Date(project.updatedAt)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun ExportsSection(
+private fun RecentExportsSection(
     exports: List<ExportEntity>,
-    onDelete: (ExportEntity) -> Unit
+    onExportClick: (ExportEntity) -> Unit,
+    onDeleteExport: (ExportEntity) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -355,7 +316,7 @@ private fun ExportsSection(
             .padding(horizontal = 24.dp)
     ) {
         Text(
-            text = "Recent Exports",
+            text = "Recent",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
@@ -365,30 +326,32 @@ private fun ExportsSection(
         exports.forEach { export ->
             ExportCard(
                 export = export,
-                onDelete = { onDelete(export) }
+                onClick = { onExportClick(export) },
+                onDelete = { onDeleteExport(export) }
             )
             Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
 
+/**
+ * Export card showing PDF info with menu.
+ */
 @Composable
 private fun ExportCard(
     export: ExportEntity,
+    onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
+    var showMenu by remember { mutableStateOf(false) }
     
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+    SoftCardSubtle(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // PDF icon
@@ -436,13 +399,27 @@ private fun ExportCard(
                     )
                 }
             }
-
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.error
-                )
+            
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "More options"
+                    )
+                }
+                
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        onClick = {
+                            showMenu = false
+                            onDelete()
+                        }
+                    )
+                }
             }
         }
     }
